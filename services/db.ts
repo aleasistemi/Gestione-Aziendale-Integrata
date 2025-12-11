@@ -170,6 +170,26 @@ class DatabaseService {
 
       this.saveDB(db);
   }
+
+  async exportDatabase(): Promise<string> {
+    const db = this.getDB();
+    return JSON.stringify(db, null, 2);
+  }
+
+  async importDatabase(jsonString: string): Promise<boolean> {
+    try {
+      const data = JSON.parse(jsonString);
+      // Basic structure validation
+      if (!data.employees || !data.jobs || !data.logs) {
+        throw new Error("Formato backup non valido o dati mancanti");
+      }
+      this.saveDB(data);
+      return true;
+    } catch (e) {
+      console.error("Failed to import database", e);
+      return false;
+    }
+  }
 }
 
 export const dbService = new DatabaseService();

@@ -337,22 +337,24 @@ function App() {
           
            {/* LOGIN PIN PAD */}
            {showLoginPinPad && (
-                <div className="absolute inset-0 bg-white rounded-2xl p-6 z-20 flex flex-col">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-bold text-slate-800">Login con PIN</h3>
-                        <button onClick={() => {setShowLoginPinPad(false); setLoginPin('');}}><X size={24} className="text-slate-400"/></button>
-                    </div>
-                    <div className="flex-1 flex flex-col justify-center">
-                        <div className="text-center text-3xl font-mono tracking-widest py-3 bg-slate-100 rounded-lg mb-6">
-                             {loginPin.padEnd(4, '•').split('').map(c => c === '•' ? '•' : '*').join('')}
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl flex flex-col">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-slate-800">Login con PIN</h3>
+                            <button onClick={() => {setShowLoginPinPad(false); setLoginPin('');}}><X size={24} className="text-slate-400"/></button>
                         </div>
-                        <div className="grid grid-cols-3 gap-3">
-                             {[1,2,3,4,5,6,7,8,9].map(n => (
-                                 <button key={n} onClick={() => setLoginPin(p => p.length < 6 ? p + n : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">{n}</button>
-                             ))}
-                             <button onClick={() => setLoginPin('')} className="p-3 bg-red-50 text-red-500 rounded"><Delete size={20} className="mx-auto"/></button>
-                             <button onClick={() => setLoginPin(p => p.length < 6 ? p + '0' : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">0</button>
-                             <button onClick={handlePinLoginSubmit} className="p-3 bg-blue-600 text-white rounded"><CheckCircle size={20} className="mx-auto"/></button>
+                        <div className="flex-1 flex flex-col justify-center">
+                            <div className="text-center text-3xl font-mono tracking-widest py-3 bg-slate-100 rounded-lg mb-6">
+                                {loginPin.padEnd(4, '•').split('').map(c => c === '•' ? '•' : '*').join('')}
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                                {[1,2,3,4,5,6,7,8,9].map(n => (
+                                    <button key={n} onClick={() => setLoginPin(p => p.length < 6 ? p + n : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">{n}</button>
+                                ))}
+                                <button onClick={() => setLoginPin('')} className="p-3 bg-red-50 text-red-500 rounded"><Delete size={20} className="mx-auto"/></button>
+                                <button onClick={() => setLoginPin(p => p.length < 6 ? p + '0' : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">0</button>
+                                <button onClick={handlePinLoginSubmit} className="p-3 bg-blue-600 text-white rounded"><CheckCircle size={20} className="mx-auto"/></button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -360,23 +362,25 @@ function App() {
 
             {/* KIOSK MODE PIN PAD */}
            {showKioskPinPad && (
-                <div className="absolute inset-0 bg-white rounded-2xl p-6 z-20 flex flex-col">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-bold text-slate-800">Attiva Totem</h3>
-                        <button onClick={() => {setShowKioskPinPad(false); setKioskPin('');}}><X size={24} className="text-slate-400"/></button>
-                    </div>
-                    <div className="flex-1 flex flex-col justify-center">
-                         <p className="text-center text-slate-500 mb-2">Inserisci PIN Sicurezza</p>
-                        <div className="text-center text-3xl font-mono tracking-widest py-3 bg-slate-100 rounded-lg mb-6">
-                             {kioskPin.padEnd(4, '•').split('').map(c => c === '•' ? '•' : '*').join('')}
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl flex flex-col">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-slate-800">Attiva Totem</h3>
+                            <button onClick={() => {setShowKioskPinPad(false); setKioskPin('');}}><X size={24} className="text-slate-400"/></button>
                         </div>
-                        <div className="grid grid-cols-3 gap-3">
-                             {[1,2,3,4,5,6,7,8,9].map(n => (
-                                 <button key={n} onClick={() => setKioskPin(p => p.length < 4 ? p + n : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">{n}</button>
-                             ))}
-                             <button onClick={() => setKioskPin('')} className="p-3 bg-red-50 text-red-500 rounded"><Delete size={20} className="mx-auto"/></button>
-                             <button onClick={() => setKioskPin(p => p.length < 4 ? p + '0' : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">0</button>
-                             <button onClick={handleKioskEntry} className="p-3 bg-red-600 text-white rounded"><CheckCircle size={20} className="mx-auto"/></button>
+                        <div className="flex-1 flex flex-col justify-center">
+                            <p className="text-center text-slate-500 mb-2">Inserisci PIN Sicurezza</p>
+                            <div className="text-center text-3xl font-mono tracking-widest py-3 bg-slate-100 rounded-lg mb-6">
+                                {kioskPin.padEnd(4, '•').split('').map(c => c === '•' ? '•' : '*').join('')}
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                                {[1,2,3,4,5,6,7,8,9].map(n => (
+                                    <button key={n} onClick={() => setKioskPin(p => p.length < 4 ? p + n : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">{n}</button>
+                                ))}
+                                <button onClick={() => setKioskPin('')} className="p-3 bg-red-50 text-red-500 rounded"><Delete size={20} className="mx-auto"/></button>
+                                <button onClick={() => setKioskPin(p => p.length < 4 ? p + '0' : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">0</button>
+                                <button onClick={handleKioskEntry} className="p-3 bg-red-600 text-white rounded"><CheckCircle size={20} className="mx-auto"/></button>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound } from 'lucide-react';
+import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload } from 'lucide-react';
 import { analyzeBusinessData } from '../services/geminiService';
 import { read, utils, writeFile } from 'xlsx';
 import { dbService } from '../services/db';
@@ -102,6 +102,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   const [isEditingJob, setIsEditingJob] = useState<Partial<Job> | null>(null);
   const [isEditingEmp, setIsEditingEmp] = useState<Partial<Employee> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const backupInputRef = useRef<HTMLInputElement>(null);
 
   // Permission Editing State
   const [tempPermissions, setTempPermissions] = useState<RolePermissions>(permissions);
@@ -256,6 +257,31 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       const workbook = utils.book_new();
       utils.book_append_sheet(workbook, worksheet, "Commesse");
       writeFile(workbook, `Report_Commesse_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleBackupDownload = async () => {
+    const data = await dbService.exportDatabase();
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backup_alea_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleBackupRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if(!file) return;
+    const text = await file.text();
+    const success = await dbService.importDatabase(text);
+    if(success) {
+        alert("Backup ripristinato con successo! La pagina verrà ricaricata.");
+        window.location.reload();
+    } else {
+        alert("Errore nel ripristino del backup. File non valido.");
+    }
   };
 
   // Re-using the robust Import Logic from previous steps
@@ -1248,25 +1274,44 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                     </div>
                 </div>
 
-                {/* Hardware / Global Settings */}
-                <div className="mb-8 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                    <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Wrench size={18}/> Impostazioni Hardware</h3>
-                    <div className="flex items-center justify-between bg-white p-3 rounded shadow-sm border border-slate-200 max-w-md">
-                        <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-full ${settings.nfcEnabled ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'}`}>
-                                <Scan size={20} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                     {/* Hardware / Global Settings */}
+                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                        <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Wrench size={18}/> Impostazioni Hardware</h3>
+                        <div className="flex items-center justify-between bg-white p-3 rounded shadow-sm border border-slate-200">
+                            <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-full ${settings.nfcEnabled ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'}`}>
+                                    <Scan size={20} />
+                                </div>
+                                <div>
+                                    <p className="font-semibold text-slate-800">Attiva Modalità NFC/Badge</p>
+                                    <p className="text-xs text-slate-500">Nasconde le liste utenti e attiva la lettura badge per Totem e Login.</p>
+                                </div>
                             </div>
-                            <div>
-                                <p className="font-semibold text-slate-800">Attiva Modalità NFC/Badge</p>
-                                <p className="text-xs text-slate-500">Nasconde le liste utenti e attiva la lettura badge per Totem e Login.</p>
-                            </div>
+                            <button 
+                                onClick={() => onSaveSettings({...settings, nfcEnabled: !settings.nfcEnabled})} 
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.nfcEnabled ? 'bg-blue-600' : 'bg-slate-300'}`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.nfcEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                            </button>
                         </div>
-                        <button 
-                            onClick={() => onSaveSettings({...settings, nfcEnabled: !settings.nfcEnabled})} 
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.nfcEnabled ? 'bg-blue-600' : 'bg-slate-300'}`}
-                        >
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.nfcEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
+                    </div>
+
+                    {/* Backup & Restore */}
+                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                         <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Database size={18}/> Backup & Ripristino</h3>
+                         <div className="space-y-3">
+                             <button onClick={handleBackupDownload} className="w-full flex items-center justify-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 p-3 rounded font-medium transition shadow-sm">
+                                 <Download size={18}/> Scarica Backup Completo (.json)
+                             </button>
+                             <div className="relative">
+                                 <input type="file" ref={backupInputRef} onChange={handleBackupRestore} accept=".json" className="hidden" />
+                                 <button onClick={() => backupInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white p-3 rounded font-medium transition shadow-sm">
+                                     <Upload size={18}/> Importa e Ripristina
+                                 </button>
+                             </div>
+                             <p className="text-xs text-slate-400 text-center">Attenzione: il ripristino sovrascriverà tutti i dati attuali.</p>
+                         </div>
                     </div>
                 </div>
 
