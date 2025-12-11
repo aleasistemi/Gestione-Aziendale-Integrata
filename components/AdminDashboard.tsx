@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload } from 'lucide-react';
+import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical } from 'lucide-react';
 import { analyzeBusinessData } from '../services/geminiService';
 import { read, utils, writeFile } from 'xlsx';
 import { dbService } from '../services/db';
@@ -80,6 +80,9 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   // Date Filtering State
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
+
+  // Phase Management State
+  const [newPhaseName, setNewPhaseName] = useState('');
 
   useEffect(() => {
      if (availableTabs.length > 0 && !availableTabs.find(t => t.id === activeTab)) {
@@ -284,6 +287,22 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
     }
   };
 
+  // Phase Management Handlers
+  const addPhase = () => {
+      if (newPhaseName && !settings.workPhases.includes(newPhaseName)) {
+          const newPhases = [...settings.workPhases, newPhaseName];
+          onSaveSettings({...settings, workPhases: newPhases});
+          setNewPhaseName('');
+      }
+  }
+
+  const removePhase = (phaseToRemove: string) => {
+      if (confirm(`Sei sicuro di voler eliminare la fase "${phaseToRemove}"?`)) {
+          const newPhases = settings.workPhases.filter(p => p !== phaseToRemove);
+          onSaveSettings({...settings, workPhases: newPhases});
+      }
+  }
+
   // Re-using the robust Import Logic from previous steps
   const parsePositionalTime = (val: any): number => {
       if (val === undefined || val === null) return 0;
@@ -484,6 +503,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   };
 
   // --- HR Calculations ---
+  // (Omitted unchanged HR calculation code for brevity, but it is present in final output)
   const calculateDailyStats = (empId: string, dateStr: string) => {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return { hours: 0, isLate: false, firstIn: null, records: [], justification: null };
@@ -1018,7 +1038,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                                                                         onBlur={() => handleUpdatePhase(log)}
                                                                         className="border rounded p-1 text-xs"
                                                                     >
-                                                                        {['Preventivo','Ordine','Taglio','Lavorazioni','Assemblaggio','Taglio Pannelli','Preparazione Accessori','Imballaggio','Spedizione','Generica (Import)'].map(p => (
+                                                                        {['Generica (Import)', ...settings.workPhases].map(p => (
                                                                             <option key={p} value={p}>{p}</option>
                                                                         ))}
                                                                     </select>
@@ -1270,7 +1290,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                     <div className="bg-slate-800 text-white p-2 rounded-lg"><Settings size={24} /></div>
                     <div>
                         <h2 className="text-xl font-bold text-slate-800">Configurazione Sistema</h2>
-                        <p className="text-slate-500 text-sm">Gestisci visibilità delle dashboard e impostazioni hardware.</p>
+                        <p className="text-slate-500 text-sm">Gestisci visibilità delle dashboard, fasi e impostazioni hardware.</p>
                     </div>
                 </div>
 
@@ -1313,6 +1333,31 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                              <p className="text-xs text-slate-400 text-center">Attenzione: il ripristino sovrascriverà tutti i dati attuali.</p>
                          </div>
                     </div>
+
+                    {/* Work Phases Management */}
+                     <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 md:col-span-2">
+                        <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><List size={18}/> Gestione Fasi Lavorative</h3>
+                        <div className="flex gap-2 mb-4">
+                            <input 
+                                type="text" 
+                                placeholder="Nuova fase..." 
+                                className="flex-1 border p-2 rounded"
+                                value={newPhaseName}
+                                onChange={(e) => setNewPhaseName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && addPhase()}
+                            />
+                            <button onClick={addPhase} className="bg-blue-600 text-white px-4 rounded hover:bg-blue-700"><Plus size={18}/></button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {settings.workPhases.map((phase) => (
+                                <div key={phase} className="bg-white border border-slate-200 px-3 py-1.5 rounded-full flex items-center gap-2 text-sm text-slate-700 shadow-sm">
+                                    <span>{phase}</span>
+                                    <button onClick={() => removePhase(phase)} className="text-slate-400 hover:text-red-500"><X size={14}/></button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
                 </div>
 
                 <h3 className="font-bold text-slate-700 mb-4">Permessi Ruoli</h3>

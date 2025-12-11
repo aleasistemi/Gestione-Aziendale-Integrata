@@ -10,9 +10,10 @@ interface Props {
   onAddLog: (log: WorkLog) => void;
   onDeleteLog: (logId: string) => void;
   onUpdateLog: (log: WorkLog) => void;
+  workPhases: string[]; // Dynamic phases from global settings
 }
 
-const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onDeleteLog, onUpdateLog }) => {
+const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onDeleteLog, onUpdateLog, workPhases }) => {
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [hours, setHours] = useState<string>('');
   const [phase, setPhase] = useState<string>('');
@@ -146,15 +147,9 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
                     required
                   >
                     <option value="">Seleziona Fase...</option>
-                    <option value="Preventivo">Preventivo</option>
-                    <option value="Ordine">Ordine</option>
-                    <option value="Taglio">Taglio</option>
-                    <option value="Lavorazioni">Lavorazioni</option>
-                    <option value="Assemblaggio">Assemblaggio</option>
-                    <option value="Taglio Pannelli">Taglio Pannelli</option>
-                    <option value="Preparazione Accessori">Preparazione Accessori</option>
-                    <option value="Imballaggio">Imballaggio</option>
-                    <option value="Spedizione">Spedizione</option>
+                    {workPhases.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                    ))}
                   </select>
                 </div>
               </div>

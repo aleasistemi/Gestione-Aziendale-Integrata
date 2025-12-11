@@ -43,7 +43,18 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
 };
 
 const DEFAULT_SETTINGS: GlobalSettings = {
-  nfcEnabled: false
+  nfcEnabled: false,
+  workPhases: [
+    'Preventivo', 
+    'Ordine', 
+    'Taglio', 
+    'Lavorazioni', 
+    'Assemblaggio', 
+    'Taglio Pannelli', 
+    'Preparazione Accessori', 
+    'Imballaggio', 
+    'Spedizione'
+  ]
 };
 
 // Dati iniziali per il primo avvio (Seeding)
@@ -113,6 +124,11 @@ class DatabaseService {
 
         const setDocSnap = setSnap.docs.find(d => d.id === 'global');
         const settings = setDocSnap ? setDocSnap.data() as GlobalSettings : DEFAULT_SETTINGS;
+
+        // Ensure default workPhases exist if legacy data
+        if (!settings.workPhases || settings.workPhases.length === 0) {
+            settings.workPhases = DEFAULT_SETTINGS.workPhases;
+        }
 
         // Fallback per prompts se vuoti (caso raro)
         const finalPrompts = customPrompts.length > 0 ? customPrompts : DEFAULT_AI_PROMPTS;

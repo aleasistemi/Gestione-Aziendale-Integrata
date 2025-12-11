@@ -92,6 +92,7 @@ export interface RolePermissions {
 
 export interface GlobalSettings {
   nfcEnabled: boolean;
+  workPhases: string[]; // Dynamic list of work phases
 }
 
 export type ViewMode = 'LOGIN' | 'ATTENDANCE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';

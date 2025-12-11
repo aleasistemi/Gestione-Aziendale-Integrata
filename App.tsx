@@ -15,7 +15,7 @@ function App() {
   const [justifications, setJustifications] = useState<DayJustification[]>([]);
   const [aiPrompts, setAiPrompts] = useState<AIQuickPrompt[]>([]);
   const [permissions, setPermissions] = useState<RolePermissions>({});
-  const [settings, setSettings] = useState<GlobalSettings>({ nfcEnabled: false });
+  const [settings, setSettings] = useState<GlobalSettings>({ nfcEnabled: false, workPhases: [] });
   const [loading, setLoading] = useState(true);
 
   // Auth & Navigation
@@ -477,6 +477,7 @@ function App() {
             onAddLog={addWorkLog}
             onDeleteLog={deleteWorkLog}
             onUpdateLog={updateWorkLog}
+            workPhases={settings.workPhases}
           />
         )}
       </main>
