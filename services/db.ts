@@ -1,8 +1,22 @@
 
-import { AppDatabase, Employee, Job, WorkLog, AttendanceRecord, Role, JobStatus, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings } from '../types';
+import { AppDatabase, Employee, Job, WorkLog, AttendanceRecord, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings } from '../types';
 import { MOCK_EMPLOYEES, MOCK_JOBS, MOCK_LOGS, MOCK_ATTENDANCE } from '../constants';
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, writeBatch, query, where } from "firebase/firestore";
 
-const DB_KEY = 'aziendale_db_v9'; // Bumped version to v9 for NFC Settings
+// Configurazione Firebase fornita dall'utente
+const firebaseConfig = {
+  apiKey: "AIzaSyAMExnSLvZab2lQeg8bPJsZ91w4bvlDQm4",
+  authDomain: "gestione-aziendale-ore.firebaseapp.com",
+  projectId: "gestione-aziendale-ore",
+  storageBucket: "gestione-aziendale-ore.firebasestorage.app",
+  messagingSenderId: "180634359822",
+  appId: "1:180634359822:web:f55c1086e731af71d3845f"
+};
+
+// Inizializzazione App Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 const DEFAULT_AI_PROMPTS: AIQuickPrompt[] = [
   { id: '1', label: 'Analisi Margine', prompt: 'Analizza il margine di profitto di tutte le commesse attive e dimmi quali sono in perdita.' },
@@ -32,6 +46,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   nfcEnabled: false
 };
 
+// Dati iniziali per il primo avvio (Seeding)
 const SEED_DATA: AppDatabase = {
   employees: MOCK_EMPLOYEES,
   jobs: MOCK_JOBS,
@@ -44,146 +59,177 @@ const SEED_DATA: AppDatabase = {
 };
 
 class DatabaseService {
-  private getDB(): AppDatabase {
-    const data = localStorage.getItem(DB_KEY);
-    if (!data) {
-      this.saveDB(SEED_DATA);
-      return SEED_DATA;
-    }
-    const parsed = JSON.parse(data);
-    // Migration helpers
-    if (!parsed.justifications) parsed.justifications = [];
-    if (!parsed.customPrompts || parsed.customPrompts.length === 0) parsed.customPrompts = DEFAULT_AI_PROMPTS;
-    if (!parsed.permissions) parsed.permissions = DEFAULT_PERMISSIONS;
-    if (!parsed.settings) parsed.settings = DEFAULT_SETTINGS;
-    return parsed;
-  }
-
-  private saveDB(data: AppDatabase) {
-    localStorage.setItem(DB_KEY, JSON.stringify(data));
-    window.dispatchEvent(new Event('storage')); 
+  
+  // Metodo per inizializzare il DB se vuoto (Primo Deploy)
+  private async seedDatabaseIfNeeded() {
+      try {
+          const empSnap = await getDocs(collection(db, 'employees'));
+          if (empSnap.empty) {
+              console.log("Database vuoto. Avvio procedura di Seed iniziale...");
+              await this.bulkImport(SEED_DATA.jobs, SEED_DATA.logs, SEED_DATA.employees);
+              
+              // Seed Settings, Permissions, Prompts
+              await setDoc(doc(db, 'settings', 'global'), SEED_DATA.settings);
+              await setDoc(doc(db, 'permissions', 'roles'), { map: SEED_DATA.permissions });
+              
+              const batch = writeBatch(db);
+              SEED_DATA.customPrompts.forEach(p => {
+                  batch.set(doc(db, 'customPrompts', p.id), p);
+              });
+              await batch.commit();
+              console.log("Seed completato.");
+          }
+      } catch (e) {
+          console.error("Errore durante il seed:", e);
+      }
   }
 
   async getAllData(): Promise<AppDatabase> {
-    return new Promise((resolve) => {
-      setTimeout(() => resolve(this.getDB()), 50); 
-    });
+    // Controllo seed al primo caricamento
+    await this.seedDatabaseIfNeeded();
+
+    try {
+        const [empSnap, jobSnap, logSnap, attSnap, justSnap, promptSnap, permSnap, setSnap] = await Promise.all([
+            getDocs(collection(db, 'employees')),
+            getDocs(collection(db, 'jobs')),
+            getDocs(collection(db, 'logs')),
+            getDocs(collection(db, 'attendance')),
+            getDocs(collection(db, 'justifications')),
+            getDocs(collection(db, 'customPrompts')),
+            getDocs(collection(db, 'permissions')),
+            getDocs(collection(db, 'settings'))
+        ]);
+
+        const employees = empSnap.docs.map(d => d.data() as Employee);
+        const jobs = jobSnap.docs.map(d => d.data() as Job);
+        const logs = logSnap.docs.map(d => d.data() as WorkLog);
+        const attendance = attSnap.docs.map(d => d.data() as AttendanceRecord);
+        const justifications = justSnap.docs.map(d => d.data() as DayJustification);
+        const customPrompts = promptSnap.docs.map(d => d.data() as AIQuickPrompt);
+        
+        // Gestione documenti singoli (Settings / Permissions)
+        const permDoc = permSnap.docs.find(d => d.id === 'roles');
+        const permissions = permDoc ? permDoc.data().map as RolePermissions : DEFAULT_PERMISSIONS;
+
+        const setDocSnap = setSnap.docs.find(d => d.id === 'global');
+        const settings = setDocSnap ? setDocSnap.data() as GlobalSettings : DEFAULT_SETTINGS;
+
+        // Fallback per prompts se vuoti (caso raro)
+        const finalPrompts = customPrompts.length > 0 ? customPrompts : DEFAULT_AI_PROMPTS;
+
+        return {
+            employees,
+            jobs,
+            logs,
+            attendance,
+            justifications,
+            customPrompts: finalPrompts,
+            permissions,
+            settings
+        };
+    } catch (e) {
+        console.error("Errore recupero dati da Firebase:", e);
+        // Ritorna dati vuoti o mock in caso di errore grave di connessione per non bloccare la UI
+        return SEED_DATA; 
+    }
   }
 
   async saveWorkLog(log: WorkLog): Promise<void> {
-    const db = this.getDB();
-    const existingIdx = db.logs.findIndex(l => l.id === log.id);
-    if (existingIdx !== -1) {
-        db.logs[existingIdx] = log;
-    } else {
-        db.logs.push(log);
-    }
-    this.saveDB(db);
+    await setDoc(doc(db, 'logs', log.id), log);
   }
 
   async deleteWorkLog(logId: string): Promise<void> {
-      const db = this.getDB();
-      db.logs = db.logs.filter(l => l.id !== logId);
-      this.saveDB(db);
+    await deleteDoc(doc(db, 'logs', logId));
   }
 
   async saveAttendance(record: AttendanceRecord): Promise<void> {
-    const db = this.getDB();
-    db.attendance.push(record);
-    this.saveDB(db);
+    await setDoc(doc(db, 'attendance', record.id), record);
   }
 
   async saveJob(job: Job): Promise<void> {
-    const db = this.getDB();
-    const existingIndex = db.jobs.findIndex(j => j.id === job.id);
-    if (existingIndex >= 0) {
-      db.jobs[existingIndex] = job;
-    } else {
-      db.jobs.push(job);
-    }
-    this.saveDB(db);
+    await setDoc(doc(db, 'jobs', job.id), job);
   }
 
   async saveEmployee(employee: Employee): Promise<void> {
-    const db = this.getDB();
-    const existingIndex = db.employees.findIndex(e => e.id === employee.id);
-    if (existingIndex >= 0) {
-      db.employees[existingIndex] = employee;
-    } else {
-      db.employees.push(employee);
-    }
-    this.saveDB(db);
+    await setDoc(doc(db, 'employees', employee.id), employee);
   }
 
   async saveJustification(justification: DayJustification): Promise<void> {
-    const db = this.getDB();
-    const existingIndex = db.justifications.findIndex(j => j.date === justification.date && j.employeeId === justification.employeeId);
-    
-    if (existingIndex >= 0) {
-        db.justifications[existingIndex] = justification;
-    } else {
-        db.justifications.push(justification);
-    }
-    this.saveDB(db);
+    await setDoc(doc(db, 'justifications', justification.id), justification);
   }
 
   async saveAiPrompts(prompts: AIQuickPrompt[]): Promise<void> {
-      const db = this.getDB();
-      db.customPrompts = prompts;
-      this.saveDB(db);
+      const batch = writeBatch(db);
+      prompts.forEach(p => {
+          batch.set(doc(db, 'customPrompts', p.id), p);
+      });
+      await batch.commit();
   }
 
   async savePermissions(permissions: RolePermissions): Promise<void> {
-      const db = this.getDB();
-      db.permissions = permissions;
-      this.saveDB(db);
+      await setDoc(doc(db, 'permissions', 'roles'), { map: permissions });
   }
 
   async saveSettings(settings: GlobalSettings): Promise<void> {
-      const db = this.getDB();
-      db.settings = settings;
-      this.saveDB(db);
+      await setDoc(doc(db, 'settings', 'global'), settings);
   }
 
   async bulkImport(newJobs: Job[], newLogs: WorkLog[], newEmployees: Employee[]): Promise<void> {
-      const db = this.getDB();
+      const batch = writeBatch(db);
       
       newEmployees.forEach(emp => {
-          const idx = db.employees.findIndex(e => e.name.toLowerCase() === emp.name.toLowerCase());
-          if (idx === -1) db.employees.push(emp);
+          batch.set(doc(db, 'employees', emp.id), emp);
       });
 
       newJobs.forEach(job => {
-          const idx = db.jobs.findIndex(j => j.code === job.code);
-          if (idx !== -1) {
-              db.jobs[idx] = { ...db.jobs[idx], ...job };
-          } else {
-              db.jobs.push(job);
-          }
+          batch.set(doc(db, 'jobs', job.id), job);
       });
 
       newLogs.forEach(log => {
-          if (!db.logs.find(l => l.id === log.id)) {
-              db.logs.push(log);
-          }
+          batch.set(doc(db, 'logs', log.id), log);
       });
 
-      this.saveDB(db);
+      // Nota: Firestore ha un limite di 500 operazioni per batch. 
+      // Per grandi importazioni, in produzione bisognerebbe dividere in chunk.
+      // Qui assumiamo che l'importazione Excel non superi le 500 righe per volta per semplicità.
+      try {
+          await batch.commit();
+      } catch (e) {
+          console.error("Batch commit failed, trying fallback loop", e);
+          // Fallback lento ma sicuro
+          for (const emp of newEmployees) await this.saveEmployee(emp);
+          for (const job of newJobs) await this.saveJob(job);
+          for (const log of newLogs) await this.saveWorkLog(log);
+      }
   }
 
   async exportDatabase(): Promise<string> {
-    const db = this.getDB();
-    return JSON.stringify(db, null, 2);
+    const data = await this.getAllData();
+    return JSON.stringify(data, null, 2);
   }
 
   async importDatabase(jsonString: string): Promise<boolean> {
     try {
       const data = JSON.parse(jsonString);
-      // Basic structure validation
       if (!data.employees || !data.jobs || !data.logs) {
-        throw new Error("Formato backup non valido o dati mancanti");
+        throw new Error("Formato backup non valido");
       }
-      this.saveDB(data);
+      
+      // Attenzione: Questo non cancella i dati esistenti su Firebase, ma sovrascrive quelli con lo stesso ID.
+      // Per un "Restore" pulito bisognerebbe cancellare le collezioni, ma è un'operazione complessa da client.
+      // Procediamo con Upsert massivo.
+      
+      await this.bulkImport(data.jobs, data.logs, data.employees);
+      await this.savePermissions(data.permissions);
+      await this.saveSettings(data.settings);
+      
+      // Import Attendance & Justifications
+      const batch = writeBatch(db);
+      (data.attendance || []).forEach((a: AttendanceRecord) => batch.set(doc(db, 'attendance', a.id), a));
+      (data.justifications || []).forEach((j: DayJustification) => batch.set(doc(db, 'justifications', j.id), j));
+      
+      await batch.commit();
+
       return true;
     } catch (e) {
       console.error("Failed to import database", e);
