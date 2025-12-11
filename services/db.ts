@@ -44,6 +44,7 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
 
 const DEFAULT_SETTINGS: GlobalSettings = {
   nfcEnabled: false,
+  geminiApiKey: '',
   workPhases: [
     'Preventivo', 
     'Ordine', 
@@ -205,14 +206,10 @@ class DatabaseService {
           batch.set(doc(db, 'logs', log.id), log);
       });
 
-      // Nota: Firestore ha un limite di 500 operazioni per batch. 
-      // Per grandi importazioni, in produzione bisognerebbe dividere in chunk.
-      // Qui assumiamo che l'importazione Excel non superi le 500 righe per volta per semplicità.
       try {
           await batch.commit();
       } catch (e) {
           console.error("Batch commit failed, trying fallback loop", e);
-          // Fallback lento ma sicuro
           for (const emp of newEmployees) await this.saveEmployee(emp);
           for (const job of newJobs) await this.saveJob(job);
           for (const log of newLogs) await this.saveWorkLog(log);
@@ -231,15 +228,10 @@ class DatabaseService {
         throw new Error("Formato backup non valido");
       }
       
-      // Attenzione: Questo non cancella i dati esistenti su Firebase, ma sovrascrive quelli con lo stesso ID.
-      // Per un "Restore" pulito bisognerebbe cancellare le collezioni, ma è un'operazione complessa da client.
-      // Procediamo con Upsert massivo.
-      
       await this.bulkImport(data.jobs, data.logs, data.employees);
       await this.savePermissions(data.permissions);
       await this.saveSettings(data.settings);
       
-      // Import Attendance & Justifications
       const batch = writeBatch(db);
       (data.attendance || []).forEach((a: AttendanceRecord) => batch.set(doc(db, 'attendance', a.id), a));
       (data.justifications || []).forEach((j: DayJustification) => batch.set(doc(db, 'justifications', j.id), j));

@@ -1,4 +1,3 @@
-
 import { Employee, Job, Role, JobStatus, WorkLog, AttendanceRecord } from './types';
 
 const DEFAULT_SCHEDULE = {
@@ -6,7 +5,8 @@ const DEFAULT_SCHEDULE = {
   scheduleStartMorning: "08:30",
   scheduleEndMorning: "12:30",
   scheduleStartAfternoon: "13:30",
-  scheduleEndAfternoon: "17:30"
+  scheduleEndAfternoon: "17:30",
+  workDays: [1, 2, 3, 4, 5]
 };
 
 export const MOCK_EMPLOYEES: Employee[] = [

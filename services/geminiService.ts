@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { Employee, Job, WorkLog } from "../types";
 
@@ -9,14 +10,15 @@ Rispondi sempre in formato Markdown. Sii conciso, professionale e orientato ai d
 
 export const analyzeBusinessData = async (
   prompt: string,
-  contextData: { jobs: Job[], logs: WorkLog[], employees: Employee[] }
+  contextData: { jobs: Job[], logs: WorkLog[], employees: Employee[] },
+  apiKey: string
 ): Promise<string> => {
-  if (!process.env.API_KEY) {
-    return "API Key mancante. Impossibile generare analisi.";
+  if (!apiKey) {
+    return "API Key mancante nelle impostazioni. Contattare il sistemista.";
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     
     // Create a context summary to reduce token usage while keeping relevance
     const dataContext = JSON.stringify({
@@ -25,7 +27,8 @@ export const analyzeBusinessData = async (
       activeJobs: contextData.jobs.filter(j => j.status === 'In Corso').map(j => ({
         code: j.code,
         budget: j.budgetValue,
-        client: j.clientName
+        client: j.clientName,
+        priority: j.priority
       })),
       employees: contextData.employees.map(e => ({ name: e.name, role: e.role, cost: e.hourlyRate })),
       recentLogsSample: contextData.logs.slice(0, 20) // Limit logs sent
@@ -54,6 +57,6 @@ export const analyzeBusinessData = async (
 
   } catch (error) {
     console.error("Gemini Error:", error);
-    return "Si è verificato un errore durante l'analisi AI. Riprova più tardi.";
+    return "Si è verificato un errore durante l'analisi AI. Controlla la validità dell'API Key.";
   }
 };

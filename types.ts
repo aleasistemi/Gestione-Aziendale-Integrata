@@ -22,6 +22,7 @@ export interface Employee {
   scheduleEndMorning: string; // "12:30"
   scheduleStartAfternoon: string; // "13:30"
   scheduleEndAfternoon: string; // "17:30"
+  workDays: number[]; // 0=Sun, 1=Mon, etc. Default [1,2,3,4,5]
   // Auth
   nfcCode?: string;
   pin?: string;
@@ -43,6 +44,8 @@ export interface Job {
   budgetHours: number;
   budgetValue: number; // Valore commessa
   deadline: string;
+  priority: number; // 1-5, default 3
+  suggestedOperatorId?: string; // Visual note for assignment
 }
 
 export interface AttendanceRecord {
@@ -93,6 +96,7 @@ export interface RolePermissions {
 export interface GlobalSettings {
   nfcEnabled: boolean;
   workPhases: string[]; // Dynamic list of work phases
+  geminiApiKey?: string; // Custom API Key
 }
 
 export type ViewMode = 'LOGIN' | 'ATTENDANCE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';

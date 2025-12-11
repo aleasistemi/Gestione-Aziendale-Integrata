@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Employee, Job, WorkLog, AttendanceRecord, ViewMode, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings } from './types';
+import { Employee, Job, WorkLog, AttendanceRecord, ViewMode, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, JobStatus } from './types';
 import { dbService } from './services/db';
 import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
@@ -189,6 +189,14 @@ function App() {
     await dbService.saveJob(job);
     refreshData();
   };
+
+  const handleUpdateJobStatus = async (jobId: string, status: JobStatus) => {
+      const job = jobs.find(j => j.id === jobId);
+      if (job) {
+          await dbService.saveJob({ ...job, status });
+          refreshData();
+      }
+  }
 
   const handleSaveEmployee = async (emp: Employee) => {
     await dbService.saveEmployee(emp);
@@ -478,6 +486,7 @@ function App() {
             onDeleteLog={deleteWorkLog}
             onUpdateLog={updateWorkLog}
             workPhases={settings.workPhases}
+            onUpdateJobStatus={handleUpdateJobStatus}
           />
         )}
       </main>

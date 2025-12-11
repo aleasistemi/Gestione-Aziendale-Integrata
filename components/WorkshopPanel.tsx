@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Job, WorkLog, Employee, JobStatus } from '../types';
-import { Clock, Save, FileText, Plus, Calendar, Trash2, Edit2 } from 'lucide-react';
+import { Clock, Save, FileText, Plus, Calendar, Trash2, Edit2, Star, CheckCircle2 } from 'lucide-react';
 
 interface Props {
   currentUser: Employee;
@@ -11,9 +11,10 @@ interface Props {
   onDeleteLog: (logId: string) => void;
   onUpdateLog: (log: WorkLog) => void;
   workPhases: string[]; // Dynamic phases from global settings
+  onUpdateJobStatus: (jobId: string, status: JobStatus) => void;
 }
 
-const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onDeleteLog, onUpdateLog, workPhases }) => {
+const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onDeleteLog, onUpdateLog, workPhases, onUpdateJobStatus }) => {
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [hours, setHours] = useState<string>('');
   const [phase, setPhase] = useState<string>('');
@@ -25,6 +26,9 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
 
   const activeJobs = jobs.filter(j => j.status === JobStatus.IN_PROGRESS || j.status === JobStatus.PLANNED);
   
+  // Filter jobs assigned specifically to this user (Suggested)
+  const mySuggestedJobs = activeJobs.filter(j => j.suggestedOperatorId === currentUser.id);
+
   // Recent logs for this user
   const myLogs = logs.filter(l => l.employeeId === currentUser.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 10);
 
@@ -64,7 +68,17 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
             notes
         };
         onAddLog(newLog);
-        alert('Ore caricate con successo!');
+        
+        // Automation: If phase is Spedizione, ask to complete job
+        if (phase.toLowerCase() === 'spedizione') {
+            if (window.confirm("Hai selezionato SPEDIZIONE. Vuoi segnare questa commessa come COMPLETATA?")) {
+                onUpdateJobStatus(selectedJobId, JobStatus.COMPLETED);
+            } else {
+                alert('Ore caricate con successo!');
+            }
+        } else {
+            alert('Ore caricate con successo!');
+        }
     }
 
     // Reset form but keep date
@@ -106,6 +120,28 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
             {new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
         </div>
       </header>
+
+      {/* Suggested Jobs Box */}
+      {mySuggestedJobs.length > 0 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-8 shadow-sm">
+              <h3 className="text-yellow-800 font-bold flex items-center gap-2 mb-3">
+                  <Star size={20} className="fill-yellow-600 text-yellow-600"/>
+                  Attività Suggerite per Te
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {mySuggestedJobs.map(job => (
+                      <div key={job.id} onClick={() => setSelectedJobId(job.id)} className="bg-white p-3 rounded-lg border border-yellow-200 hover:border-yellow-400 cursor-pointer transition shadow-sm hover:shadow-md">
+                          <div className="font-bold text-slate-800">{job.code}</div>
+                          <div className="text-sm text-slate-600">{job.clientName}</div>
+                          <div className="text-xs text-slate-500 mt-1">{job.description}</div>
+                          <div className="mt-2 flex gap-1">
+                              {Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
