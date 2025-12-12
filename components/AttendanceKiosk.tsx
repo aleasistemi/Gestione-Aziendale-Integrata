@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Employee, AttendanceRecord, Role } from '../types';
 import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X } from 'lucide-react';
 
@@ -16,7 +15,10 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
   const [message, setMessage] = useState<string | null>(null);
   
   // NFC / PIN States
-  const [nfcBuffer, setNfcBuffer] = useState('');
+  // Use refs for buffering to ensure we catch fast scanner input without re-renders
+  const nfcBufferRef = useRef('');
+  const nfcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [showPinPad, setShowPinPad] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
 
@@ -35,14 +37,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-clear NFC buffer if idle for 2 seconds (cleans up partial scans)
-  useEffect(() => {
-    if (nfcBuffer.length > 0) {
-        const timer = setTimeout(() => setNfcBuffer(''), 2000);
-        return () => clearTimeout(timer);
-    }
-  }, [nfcBuffer]);
-
   // NFC Listener
   useEffect(() => {
     if (!nfcEnabled) return;
@@ -50,35 +44,48 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
     const handleKeyDown = (e: KeyboardEvent) => {
         if (selectedEmp || showExitPinPad || showPinPad) return; // Don't scan if user already selected/acting or entering PIN
 
+        // Clear previous clear-timer
+        if (nfcTimeoutRef.current) {
+            clearTimeout(nfcTimeoutRef.current);
+        }
+
+        // Set a timeout to clear buffer if no more keys arrive (end of scan or manual typing pause)
+        nfcTimeoutRef.current = setTimeout(() => {
+            nfcBufferRef.current = '';
+        }, 2000); // 2 seconds
+
         if (e.key === 'Enter' || e.key === 'Tab') {
             e.preventDefault(); // Prevent default navigation
-            if (nfcBuffer.length > 2) { // Minimum length check
+            const scannedBuffer = nfcBufferRef.current;
+            
+            if (scannedBuffer.length > 1) { // Minimum length check
                 // Normalize to Uppercase for comparison
-                const scannedCode = nfcBuffer.trim().toUpperCase();
+                const scannedCode = scannedBuffer.trim().toUpperCase();
                 const emp = employees.find(e => e.nfcCode?.trim().toUpperCase() === scannedCode);
                 
                 if (emp) {
                     setSelectedEmp(emp);
-                    setNfcBuffer('');
                 } else {
-                   setMessage("Badge non riconosciuto");
-                   setTimeout(() => setMessage(null), 2000);
-                   setNfcBuffer('');
+                   setMessage(`Badge non riconosciuto: ${scannedCode}`);
+                   setTimeout(() => setMessage(null), 3000);
                 }
-            } else {
-                setNfcBuffer('');
             }
+            // Always clear buffer after Enter
+            nfcBufferRef.current = '';
         } else {
             // Only capture alphanumeric chars (ignore Shift, Control, etc.)
             if (e.key.length === 1) {
-                setNfcBuffer(prev => prev + e.key);
+                nfcBufferRef.current += e.key;
             }
         }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nfcEnabled, nfcBuffer, employees, selectedEmp, showExitPinPad, showPinPad]);
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        if (nfcTimeoutRef.current) clearTimeout(nfcTimeoutRef.current);
+    };
+  }, [nfcEnabled, employees, selectedEmp, showExitPinPad, showPinPad]);
 
   const handleAction = (type: 'ENTRATA' | 'USCITA') => {
     if (!selectedEmp) return;
@@ -159,7 +166,7 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
         <div className="w-full max-w-5xl flex flex-col items-center">
           
           {message && (
-             <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg font-bold animate-bounce">
+             <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg font-bold animate-bounce text-center">
                  {message}
              </div>
           )}
