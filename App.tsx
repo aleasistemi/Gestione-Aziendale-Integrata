@@ -5,7 +5,7 @@ import { dbService } from './services/db';
 import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
 import AdminDashboard from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock } from 'lucide-react';
+import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Bug } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -40,6 +40,11 @@ function App() {
   // Kiosk Mode Protection
   const [showKioskPinPad, setShowKioskPinPad] = useState(false);
   const [kioskPin, setKioskPin] = useState('');
+
+  // --- DEBUG STATE ---
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const debugInputRef = useRef<HTMLInputElement>(null);
 
   // Load Data
   const refreshData = async () => {
@@ -84,7 +89,7 @@ function App() {
 
   // Force focus on login scanner input
   useEffect(() => {
-    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskPinPad) {
+    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskPinPad && !showDebug) {
          const focusInterval = setInterval(() => {
               if (document.activeElement !== loginInputRef.current) {
                   loginInputRef.current?.focus();
@@ -92,7 +97,24 @@ function App() {
           }, 500);
           return () => clearInterval(focusInterval);
     }
-  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskPinPad]);
+  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskPinPad, showDebug]);
+
+  // Debug Listener
+  useEffect(() => {
+      if (!showDebug) return;
+      
+      const handleDebugKey = (e: KeyboardEvent) => {
+          const log = `[${new Date().toLocaleTimeString()}] KEYDOWN -> key: "${e.key}", code: "${e.code}", keyCode: ${e.keyCode}, type: ${e.type}`;
+          setDebugLogs(prev => [log, ...prev].slice(0, 20));
+      };
+
+      window.addEventListener('keydown', handleDebugKey);
+      
+      // Focus debug input
+      setTimeout(() => debugInputRef.current?.focus(), 100);
+
+      return () => window.removeEventListener('keydown', handleDebugKey);
+  }, [showDebug]);
 
   const processLoginScan = (code: string) => {
       if (code.length < 2) return;
@@ -413,16 +435,53 @@ function App() {
                 </div>
            )}
 
+            {/* DEBUG MODAL */}
+            {showDebug && (
+                 <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 text-green-400 font-mono">
+                     <div className="w-full max-w-3xl border border-green-500 p-4 rounded bg-black h-[80vh] flex flex-col">
+                         <div className="flex justify-between items-center mb-4 border-b border-green-800 pb-2">
+                             <h3 className="font-bold flex items-center gap-2"><Bug /> Diagnostica Lettore</h3>
+                             <button onClick={() => setShowDebug(false)} className="text-red-500 font-bold">[CHIUDI X]</button>
+                         </div>
+                         <div className="mb-4">
+                             <p>Clicca nella casella qui sotto e passa il badge.</p>
+                             <input 
+                                ref={debugInputRef} 
+                                type="text" 
+                                className="w-full bg-slate-900 border border-green-700 text-white p-2 mt-2 outline-none focus:border-green-400" 
+                                placeholder="Focus qui..."
+                                autoFocus
+                             />
+                         </div>
+                         <div className="flex-1 overflow-y-auto space-y-1 text-xs">
+                             {debugLogs.length === 0 && <p className="opacity-50">In attesa di input...</p>}
+                             {debugLogs.map((log, i) => (
+                                 <div key={i} className="border-b border-green-900/50 pb-1">{log}</div>
+                             ))}
+                         </div>
+                     </div>
+                 </div>
+            )}
+
         </div>
 
         {/* Small Kiosk Button Bottom Right */}
-        <button 
-            onClick={() => setShowKioskPinPad(true)}
-            className="absolute bottom-4 right-4 p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-slate-800 rounded-full transition shadow-sm"
-            title="Attiva Modalità Totem"
-        >
-            <TerminalSquare size={16} />
-        </button>
+        <div className="absolute bottom-4 right-4 flex gap-2">
+            <button 
+                onClick={() => setShowDebug(true)}
+                className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-slate-800 rounded-full transition shadow-sm"
+                title="Test Lettore (Debug)"
+            >
+                <Bug size={16} />
+            </button>
+            <button 
+                onClick={() => setShowKioskPinPad(true)}
+                className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-slate-800 rounded-full transition shadow-sm"
+                title="Attiva Modalità Totem"
+            >
+                <TerminalSquare size={16} />
+            </button>
+        </div>
 
       </div>
     );
