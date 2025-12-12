@@ -5,7 +5,7 @@ import { dbService } from './services/db';
 import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
 import AdminDashboard from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Bug } from 'lucide-react';
+import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Bug, Plug, Zap } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -40,6 +40,12 @@ function App() {
   // Kiosk Mode Protection
   const [showKioskPinPad, setShowKioskPinPad] = useState(false);
   const [kioskPin, setKioskPin] = useState('');
+
+  // --- SERIAL PORT / COM STATE ---
+  const [isSerialConnected, setIsSerialConnected] = useState(false);
+  const portRef = useRef<any>(null); // Web Serial Port Object
+  const readerRef = useRef<any>(null);
+  const [serialCodeBuffer, setSerialCodeBuffer] = useState<string | null>(null);
 
   // --- DEBUG STATE ---
   const [showDebug, setShowDebug] = useState(false);
@@ -87,9 +93,82 @@ function App() {
     };
   }, []);
 
-  // Force focus on login scanner input
+  // SERIAL PORT HANDLING LOGIC
+  const connectSerialPort = async () => {
+    if (!('serial' in navigator)) {
+        alert("Il tuo browser non supporta la connessione seriale (Web Serial API). Usa Chrome, Edge o Opera.");
+        return;
+    }
+
+    try {
+        const port = await (navigator as any).serial.requestPort();
+        await port.open({ baudRate: 9600 }); // Standard baud rate for scanners
+        portRef.current = port;
+        setIsSerialConnected(true);
+        setLoginMessage("Lettore connesso!");
+        readSerialLoop(port);
+    } catch (err) {
+        console.error("Errore connessione seriale:", err);
+        setLoginMessage("Errore connessione lettore.");
+    }
+  };
+
+  const readSerialLoop = async (port: any) => {
+      const textDecoder = new TextDecoderStream();
+      const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+      const reader = textDecoder.readable.getReader();
+      readerRef.current = reader;
+
+      let buffer = "";
+
+      try {
+          while (true) {
+              const { value, done } = await reader.read();
+              if (done) {
+                  // Allow the serial port to be closed later.
+                  reader.releaseLock();
+                  break;
+              }
+              if (value) {
+                  buffer += value;
+                  // Check for newline characters (scanners usually end with \r or \n)
+                  if (buffer.includes('\n') || buffer.includes('\r')) {
+                      // Process the complete code
+                      const lines = buffer.split(/\r\n|\r|\n/);
+                      // The last part might be an incomplete next code, keep it in buffer
+                      buffer = lines.pop() || ""; 
+                      
+                      for (const code of lines) {
+                          if (code.trim().length > 1) {
+                              handleSerialScan(code.trim());
+                          }
+                      }
+                  }
+              }
+          }
+      } catch (error) {
+          console.error("Serial read error:", error);
+          setIsSerialConnected(false);
+      }
+  };
+
+  const handleSerialScan = (code: string) => {
+      // Add to debug logs if open
+      setDebugLogs(prev => [`[SERIAL] Scanned: ${code}`, ...prev].slice(0, 20));
+
+      if (viewMode === 'LOGIN') {
+          processLoginScan(code);
+      } else if (viewMode === 'ATTENDANCE_KIOSK') {
+          // Pass to kiosk via state prop
+          setSerialCodeBuffer(code);
+          // Clear it shortly after so the prop changes for next scan
+          setTimeout(() => setSerialCodeBuffer(null), 500);
+      }
+  };
+
+  // Force focus on login scanner input (only if NOT using serial)
   useEffect(() => {
-    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskPinPad && !showDebug) {
+    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskPinPad && !showDebug && !isSerialConnected) {
          const focusInterval = setInterval(() => {
               if (document.activeElement !== loginInputRef.current) {
                   loginInputRef.current?.focus();
@@ -97,9 +176,9 @@ function App() {
           }, 500);
           return () => clearInterval(focusInterval);
     }
-  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskPinPad, showDebug]);
+  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskPinPad, showDebug, isSerialConnected]);
 
-  // Debug Listener
+  // Debug Listener (Keyboard)
   useEffect(() => {
       if (!showDebug) return;
       
@@ -297,6 +376,7 @@ function App() {
         onRecord={addAttendanceRecord}
         onExit={() => setViewMode('LOGIN')}
         nfcEnabled={settings.nfcEnabled}
+        externalCode={serialCodeBuffer}
       />
     );
   }
@@ -334,23 +414,34 @@ function App() {
                    <div className="flex flex-col items-center py-6 w-full">
                       
                       {/* VISIBLE SCANNER INPUT FOR LOGIN */}
-                      <div className="relative w-full mb-6">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <Scan className="text-slate-400" />
+                      {!isSerialConnected && (
+                          <div className="relative w-full mb-6">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                  <Scan className="text-slate-400" />
+                              </div>
+                              <input 
+                                  ref={loginInputRef}
+                                  type="text" 
+                                  value={scanValue}
+                                  onChange={(e) => setScanValue(e.target.value)}
+                                  onKeyDown={handleLoginKeyDown}
+                                  placeholder="Clicca qui e passa il badge..."
+                                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-200 focus:border-[#EC1D25] rounded-xl text-center font-mono tracking-widest uppercase outline-none"
+                                  autoFocus
+                              />
                           </div>
-                          <input 
-                              ref={loginInputRef}
-                              type="text" 
-                              value={scanValue}
-                              onChange={(e) => setScanValue(e.target.value)}
-                              onKeyDown={handleLoginKeyDown}
-                              placeholder="Clicca qui e passa il badge..."
-                              className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-200 focus:border-[#EC1D25] rounded-xl text-center font-mono tracking-widest uppercase outline-none"
-                              autoFocus
-                          />
-                      </div>
+                      )}
+                      
+                      {isSerialConnected ? (
+                          <div className="flex flex-col items-center mb-6 text-green-600 bg-green-50 p-4 rounded-xl w-full border border-green-200">
+                               <Plug size={40} className="mb-2" />
+                               <span className="font-bold">Lettore Seriale CONNESSO</span>
+                               <span className="text-xs">Passa il badge per entrare</span>
+                          </div>
+                      ) : (
+                          <p className="text-slate-500 font-medium mb-2">Avvicina Badge</p>
+                      )}
 
-                      <p className="text-slate-500 font-medium mb-2">Avvicina Badge</p>
                       {loginMessage && <p className="text-red-500 font-bold mb-4 animate-pulse">{loginMessage}</p>}
                       <button onClick={() => setShowLoginPinPad(true)} className="flex items-center gap-2 text-blue-600 hover:underline mt-4">
                           <KeyRound size={16} /> Usa PIN
@@ -465,8 +556,17 @@ function App() {
 
         </div>
 
-        {/* Small Kiosk Button Bottom Right */}
+        {/* Bottom Right Tools */}
         <div className="absolute bottom-4 right-4 flex gap-2">
+            {!isSerialConnected && (
+                <button 
+                    onClick={connectSerialPort}
+                    className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-blue-600 rounded-full transition shadow-sm"
+                    title="Connetti Lettore COM/USB (Web Serial API)"
+                >
+                    <Plug size={16} />
+                </button>
+            )}
             <button 
                 onClick={() => setShowDebug(true)}
                 className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-slate-800 rounded-full transition shadow-sm"
