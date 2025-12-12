@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, AttendanceRecord, Role } from '../types';
-import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X } from 'lucide-react';
+import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw } from 'lucide-react';
 
 interface Props {
   employees: Employee[];
@@ -14,10 +15,9 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
   const [currentTime, setCurrentTime] = useState(new Date());
   const [message, setMessage] = useState<string | null>(null);
   
-  // NFC / PIN States
-  // Use refs for buffering to ensure we catch fast scanner input without re-renders
-  const nfcBufferRef = useRef('');
-  const nfcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Scanner Input State
+  const [scanValue, setScanValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [showPinPad, setShowPinPad] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
@@ -37,55 +37,42 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
     return () => clearInterval(timer);
   }, []);
 
-  // NFC Listener
+  // Force focus on the scanner input continuously if not in a modal
   useEffect(() => {
-    if (!nfcEnabled) return;
+      if (nfcEnabled && !showPinPad && !showExitPinPad && !selectedEmp) {
+          const focusInterval = setInterval(() => {
+              if (document.activeElement !== inputRef.current) {
+                  inputRef.current?.focus();
+              }
+          }, 500);
+          return () => clearInterval(focusInterval);
+      }
+  }, [nfcEnabled, showPinPad, showExitPinPad, selectedEmp]);
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-        if (selectedEmp || showExitPinPad || showPinPad) return; // Don't scan if user already selected/acting or entering PIN
-
-        // Clear previous clear-timer
-        if (nfcTimeoutRef.current) {
-            clearTimeout(nfcTimeoutRef.current);
-        }
-
-        // Set a timeout to clear buffer if no more keys arrive (end of scan or manual typing pause)
-        nfcTimeoutRef.current = setTimeout(() => {
-            nfcBufferRef.current = '';
-        }, 2000); // 2 seconds
-
-        if (e.key === 'Enter' || e.key === 'Tab') {
-            e.preventDefault(); // Prevent default navigation
-            const scannedBuffer = nfcBufferRef.current;
-            
-            if (scannedBuffer.length > 1) { // Minimum length check
-                // Normalize to Uppercase for comparison
-                const scannedCode = scannedBuffer.trim().toUpperCase();
-                const emp = employees.find(e => e.nfcCode?.trim().toUpperCase() === scannedCode);
+  const processScan = (code: string) => {
+      if (code.length < 2) return;
+      
+      const cleanCode = code.trim().toUpperCase();
+      console.log("Checking code:", cleanCode); // Debug
+      
+      const emp = employees.find(e => e.nfcCode?.trim().toUpperCase() === cleanCode);
                 
-                if (emp) {
-                    setSelectedEmp(emp);
-                } else {
-                   setMessage(`Badge non riconosciuto: ${scannedCode}`);
-                   setTimeout(() => setMessage(null), 3000);
-                }
-            }
-            // Always clear buffer after Enter
-            nfcBufferRef.current = '';
-        } else {
-            // Only capture alphanumeric chars (ignore Shift, Control, etc.)
-            if (e.key.length === 1) {
-                nfcBufferRef.current += e.key;
-            }
-        }
-    };
+      if (emp) {
+          setSelectedEmp(emp);
+          setScanValue('');
+      } else {
+          setMessage(`Badge non riconosciuto: ${cleanCode}`);
+          setScanValue('');
+          setTimeout(() => setMessage(null), 3000);
+      }
+  };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-        window.removeEventListener('keydown', handleKeyDown);
-        if (nfcTimeoutRef.current) clearTimeout(nfcTimeoutRef.current);
-    };
-  }, [nfcEnabled, employees, selectedEmp, showExitPinPad, showPinPad]);
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          processScan(scanValue);
+      }
+  };
 
   const handleAction = (type: 'ENTRATA' | 'USCITA') => {
     if (!selectedEmp) return;
@@ -106,6 +93,8 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
       setSelectedEmp(null);
       setShowPinPad(false);
       setEnteredPin('');
+      // Refocus scanner
+      setTimeout(() => inputRef.current?.focus(), 100);
     }, 3000);
   };
 
@@ -172,13 +161,34 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
           )}
 
           {nfcEnabled ? (
-              <div className="flex flex-col items-center animate-fade-in">
-                  <div className="w-64 h-64 rounded-full bg-slate-50 border-8 border-slate-100 flex flex-col items-center justify-center mb-8 relative overflow-hidden">
-                      <div className="absolute inset-0 border-t-4 border-[#EC1D25] animate-spin rounded-full opacity-20"></div>
-                      <Scan size={80} className="text-slate-400 mb-4" />
-                      <p className="text-slate-500 font-bold uppercase tracking-widest text-sm">Avvicinare Badge</p>
+              <div className="flex flex-col items-center animate-fade-in w-full max-w-md">
+                  
+                  {/* SCANNER INPUT AREA - VISIBLE FOR DEBUGGING AND RELIABILITY */}
+                  <div className="relative w-full mb-8">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Scan className="text-slate-400" />
+                      </div>
+                      <input 
+                          ref={inputRef}
+                          type="text" 
+                          value={scanValue}
+                          onChange={(e) => setScanValue(e.target.value)}
+                          onKeyDown={handleInputKeyDown}
+                          placeholder="Clicca qui e passa il badge..."
+                          className="w-full pl-10 pr-4 py-4 bg-slate-50 border-2 border-slate-200 focus:border-[#EC1D25] rounded-xl text-lg outline-none transition shadow-inner text-center font-mono tracking-widest uppercase"
+                          autoComplete="off"
+                          autoFocus
+                      />
+                      <div className="absolute inset-y-0 right-0 pr-2 flex items-center">
+                          <button onClick={() => setScanValue('')} className="p-2 text-slate-400 hover:text-slate-600"><X size={16}/></button>
+                      </div>
                   </div>
                   
+                  <div className="flex items-center justify-center gap-2 mb-8 text-slate-400 text-sm">
+                      <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                      Lettore Pronto
+                  </div>
+
                   <button 
                     onClick={() => setShowPinPad(true)}
                     className="flex items-center gap-2 text-slate-500 hover:text-[#EC1D25] transition border px-6 py-2 rounded-full hover:bg-slate-50"
