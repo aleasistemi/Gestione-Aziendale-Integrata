@@ -5,7 +5,7 @@ import { dbService } from './services/db';
 import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
 import AdminDashboard from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Bug, Plug, Zap } from 'lucide-react';
+import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Bug, Plug, Zap, Settings } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -43,6 +43,7 @@ function App() {
 
   // --- SERIAL PORT / COM STATE ---
   const [isSerialConnected, setIsSerialConnected] = useState(false);
+  const [serialBaudRate, setSerialBaudRate] = useState<number>(9600);
   const portRef = useRef<any>(null); // Web Serial Port Object
   const readerRef = useRef<any>(null);
   const [serialCodeBuffer, setSerialCodeBuffer] = useState<string | null>(null);
@@ -102,10 +103,10 @@ function App() {
 
     try {
         const port = await (navigator as any).serial.requestPort();
-        await port.open({ baudRate: 9600 }); // Standard baud rate for scanners
+        await port.open({ baudRate: serialBaudRate });
         portRef.current = port;
         setIsSerialConnected(true);
-        setLoginMessage("Lettore connesso!");
+        setLoginMessage(`Lettore connesso a ${serialBaudRate} baud!`);
         readSerialLoop(port);
     } catch (err) {
         console.error("Errore connessione seriale:", err);
@@ -113,10 +114,21 @@ function App() {
     }
   };
 
+  const disconnectSerialPort = async () => {
+      if (readerRef.current) {
+          try {
+              await readerRef.current.cancel();
+              // The loop will exit and release the lock
+          } catch (e) {
+              console.error("Error cancelling reader", e);
+          }
+      }
+      setIsSerialConnected(false);
+  }
+
   const readSerialLoop = async (port: any) => {
-      const textDecoder = new TextDecoderStream();
-      const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
-      const reader = textDecoder.readable.getReader();
+      // Use Raw Reader (no TextDecoderStream) to catch binary/weird data
+      const reader = port.readable.getReader();
       readerRef.current = reader;
 
       let buffer = "";
@@ -125,18 +137,37 @@ function App() {
           while (true) {
               const { value, done } = await reader.read();
               if (done) {
-                  // Allow the serial port to be closed later.
                   reader.releaseLock();
                   break;
               }
               if (value) {
-                  buffer += value;
+                  // value is Uint8Array
+                  // 1. Convert to Hex for Debugging
+                  const hexValues = Array.from(value).map((byte: any) => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+                  
+                  // 2. Convert to Text for Logic
+                  const textChunk = new TextDecoder().decode(value);
+                  
+                  // Debug Log
+                  const logMsg = `[RAW] ${hexValues} | [TXT] ${textChunk.replace(/\r/g, '\\r').replace(/\n/g, '\\n')}`;
+                  setDebugLogs(prev => [logMsg, ...prev].slice(0, 50));
+
+                  buffer += textChunk;
+
                   // Check for newline characters (scanners usually end with \r or \n)
                   if (buffer.includes('\n') || buffer.includes('\r')) {
-                      // Process the complete code
-                      const lines = buffer.split(/\r\n|\r|\n/);
-                      // The last part might be an incomplete next code, keep it in buffer
-                      buffer = lines.pop() || ""; 
+                      // Normalize newlines
+                      const normalized = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                      const lines = normalized.split('\n');
+                      
+                      // Keep the last part in buffer if it doesn't end with newline
+                      // Check if original buffer ended with newline char
+                      const lastChar = buffer[buffer.length - 1];
+                      if (lastChar !== '\n' && lastChar !== '\r') {
+                           buffer = lines.pop() || "";
+                      } else {
+                           buffer = "";
+                      }
                       
                       for (const code of lines) {
                           if (code.trim().length > 1) {
@@ -148,13 +179,14 @@ function App() {
           }
       } catch (error) {
           console.error("Serial read error:", error);
+          setLoginMessage("Errore lettura seriale");
           setIsSerialConnected(false);
       }
   };
 
   const handleSerialScan = (code: string) => {
-      // Add to debug logs if open
-      setDebugLogs(prev => [`[SERIAL] Scanned: ${code}`, ...prev].slice(0, 20));
+      // Add to debug logs
+      setDebugLogs(prev => [`[SCAN DETECTED] Code: ${code}`, ...prev].slice(0, 50));
 
       if (viewMode === 'LOGIN') {
           processLoginScan(code);
@@ -183,8 +215,8 @@ function App() {
       if (!showDebug) return;
       
       const handleDebugKey = (e: KeyboardEvent) => {
-          const log = `[${new Date().toLocaleTimeString()}] KEYDOWN -> key: "${e.key}", code: "${e.code}", keyCode: ${e.keyCode}, type: ${e.type}`;
-          setDebugLogs(prev => [log, ...prev].slice(0, 20));
+          const log = `[KEYBOARD] Key: "${e.key}", Code: "${e.code}"`;
+          setDebugLogs(prev => [log, ...prev].slice(0, 50));
       };
 
       window.addEventListener('keydown', handleDebugKey);
@@ -436,7 +468,9 @@ function App() {
                           <div className="flex flex-col items-center mb-6 text-green-600 bg-green-50 p-4 rounded-xl w-full border border-green-200">
                                <Plug size={40} className="mb-2" />
                                <span className="font-bold">Lettore Seriale CONNESSO</span>
-                               <span className="text-xs">Passa il badge per entrare</span>
+                               <span className="text-xs">Velocità: {serialBaudRate} baud</span>
+                               <span className="text-xs mt-1">Passa il badge per entrare</span>
+                               <button onClick={disconnectSerialPort} className="mt-2 text-xs text-red-500 hover:underline">Disconnetti</button>
                           </div>
                       ) : (
                           <p className="text-slate-500 font-medium mb-2">Avvicina Badge</p>
@@ -534,20 +568,14 @@ function App() {
                              <h3 className="font-bold flex items-center gap-2"><Bug /> Diagnostica Lettore</h3>
                              <button onClick={() => setShowDebug(false)} className="text-red-500 font-bold">[CHIUDI X]</button>
                          </div>
-                         <div className="mb-4">
-                             <p>Clicca nella casella qui sotto e passa il badge.</p>
-                             <input 
-                                ref={debugInputRef} 
-                                type="text" 
-                                className="w-full bg-slate-900 border border-green-700 text-white p-2 mt-2 outline-none focus:border-green-400" 
-                                placeholder="Focus qui..."
-                                autoFocus
-                             />
+                         <div className="mb-4 text-sm text-slate-400">
+                             <p>Se vedi dati RAW (es. 02 4A...) ma non TXT, la velocità è sbagliata.</p>
+                             <p className="font-bold text-white">Velocità attuale: {serialBaudRate}</p>
                          </div>
                          <div className="flex-1 overflow-y-auto space-y-1 text-xs">
                              {debugLogs.length === 0 && <p className="opacity-50">In attesa di input...</p>}
                              {debugLogs.map((log, i) => (
-                                 <div key={i} className="border-b border-green-900/50 pb-1">{log}</div>
+                                 <div key={i} className="border-b border-green-900/50 pb-1 break-all">{log}</div>
                              ))}
                          </div>
                      </div>
@@ -557,15 +585,29 @@ function App() {
         </div>
 
         {/* Bottom Right Tools */}
-        <div className="absolute bottom-4 right-4 flex gap-2">
+        <div className="absolute bottom-4 right-4 flex gap-2 items-end">
             {!isSerialConnected && (
-                <button 
-                    onClick={connectSerialPort}
-                    className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-blue-600 rounded-full transition shadow-sm"
-                    title="Connetti Lettore COM/USB (Web Serial API)"
-                >
-                    <Plug size={16} />
-                </button>
+                <div className="flex items-center gap-2 bg-white/80 p-1 rounded-full shadow-sm animate-fade-in backdrop-blur-sm">
+                    <select 
+                        className="text-xs bg-transparent border-none outline-none text-slate-600 font-bold px-1 w-20 text-right appearance-none cursor-pointer" 
+                        value={serialBaudRate}
+                        onChange={(e) => setSerialBaudRate(parseInt(e.target.value))}
+                        title="Velocità in Baud"
+                    >
+                        <option value="9600">9600</option>
+                        <option value="19200">19200</option>
+                        <option value="38400">38400</option>
+                        <option value="57600">57600</option>
+                        <option value="115200">115200</option>
+                    </select>
+                    <button 
+                        onClick={connectSerialPort}
+                        className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition shadow-md"
+                        title="Connetti Lettore COM/USB (Web Serial API)"
+                    >
+                        <Plug size={16} />
+                    </button>
+                </div>
             )}
             <button 
                 onClick={() => setShowDebug(true)}
