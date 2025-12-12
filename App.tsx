@@ -5,7 +5,7 @@ import { dbService } from './services/db';
 import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
 import AdminDashboard from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Bug, Settings } from 'lucide-react';
+import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Settings, Wifi } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -40,11 +40,6 @@ function App() {
   // Kiosk Mode Protection
   const [showKioskPinPad, setShowKioskPinPad] = useState(false);
   const [kioskPin, setKioskPin] = useState('');
-
-  // --- DEBUG STATE ---
-  const [showDebug, setShowDebug] = useState(false);
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  const debugInputRef = useRef<HTMLInputElement>(null);
 
   // Load Data
   const refreshData = async () => {
@@ -89,7 +84,7 @@ function App() {
 
   // Force focus on login scanner input
   useEffect(() => {
-    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskPinPad && !showDebug) {
+    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskPinPad) {
          const focusInterval = setInterval(() => {
               if (document.activeElement !== loginInputRef.current) {
                   loginInputRef.current?.focus();
@@ -97,24 +92,7 @@ function App() {
           }, 500);
           return () => clearInterval(focusInterval);
     }
-  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskPinPad, showDebug]);
-
-  // Debug Listener (Keyboard only)
-  useEffect(() => {
-      if (!showDebug) return;
-      
-      const handleDebugKey = (e: KeyboardEvent) => {
-          const log = `[KEYBOARD] Key: "${e.key}", Code: "${e.code}"`;
-          setDebugLogs(prev => [log, ...prev].slice(0, 50));
-      };
-
-      window.addEventListener('keydown', handleDebugKey);
-      
-      // Focus debug input
-      setTimeout(() => debugInputRef.current?.focus(), 100);
-
-      return () => window.removeEventListener('keydown', handleDebugKey);
-  }, [showDebug]);
+  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskPinPad]);
 
   const processLoginScan = (code: string) => {
       if (code.length < 2) return;
@@ -125,7 +103,7 @@ function App() {
           handleLogin(emp);
           setScanValue('');
       } else {
-          setLoginMessage(`Badge non riconosciuto: ${cleanCode}`);
+          setLoginMessage(`Badge non riconosciuto`);
           setScanValue('');
           setTimeout(() => setLoginMessage(null), 3000);
       }
@@ -331,30 +309,39 @@ function App() {
             <div className="pt-2">
               
               {settings.nfcEnabled ? (
-                   <div className="flex flex-col items-center py-6 w-full">
+                   <div className="flex flex-col items-center py-4 w-full relative">
                       
-                      {/* VISIBLE SCANNER INPUT FOR LOGIN */}
-                      <div className="relative w-full mb-6">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <Scan className="text-slate-400" />
+                      {/* INVISIBLE SCANNER INPUT FOR LOGIN */}
+                      <input 
+                          ref={loginInputRef}
+                          type="text" 
+                          value={scanValue}
+                          onChange={(e) => setScanValue(e.target.value)}
+                          onKeyDown={handleLoginKeyDown}
+                          className="absolute inset-0 opacity-0 cursor-default"
+                          autoFocus
+                          autoComplete="off"
+                      />
+
+                      {/* VISUAL ANIMATION */}
+                      <div className="w-48 h-48 relative flex items-center justify-center mb-4 cursor-pointer" onClick={() => loginInputRef.current?.focus()}>
+                          <div className="absolute inset-0 bg-blue-50 rounded-full animate-ping opacity-20"></div>
+                          <div className="absolute inset-4 bg-blue-100 rounded-full animate-pulse opacity-30"></div>
+                          <div className="relative z-10 bg-white p-6 rounded-full shadow-lg border-2 border-blue-100">
+                             <Scan size={48} className="text-blue-600" />
                           </div>
-                          <input 
-                              ref={loginInputRef}
-                              type="text" 
-                              value={scanValue}
-                              onChange={(e) => setScanValue(e.target.value)}
-                              onKeyDown={handleLoginKeyDown}
-                              placeholder="Clicca qui e passa il badge..."
-                              className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-200 focus:border-[#EC1D25] rounded-xl text-center font-mono tracking-widest uppercase outline-none"
-                              autoFocus
-                          />
+                          {/* Status Indicator */}
+                          <div className="absolute bottom-0 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold border border-green-200 flex items-center gap-1 shadow-sm">
+                             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                             Lettore Attivo
+                          </div>
                       </div>
                       
-                      <p className="text-slate-500 font-medium mb-2">Avvicina Badge</p>
+                      <p className="text-slate-500 font-medium mb-2 mt-2">Avvicina il Badge al lettore...</p>
                       
-                      {loginMessage && <p className="text-red-500 font-bold mb-4 animate-pulse">{loginMessage}</p>}
-                      <button onClick={() => setShowLoginPinPad(true)} className="flex items-center gap-2 text-blue-600 hover:underline mt-4">
-                          <KeyRound size={16} /> Usa PIN
+                      {loginMessage && <p className="text-red-500 font-bold mb-4 animate-bounce bg-red-50 px-4 py-2 rounded-lg">{loginMessage}</p>}
+                      <button onClick={() => setShowLoginPinPad(true)} className="flex items-center gap-2 text-blue-600 hover:underline mt-4 text-sm font-medium">
+                          <KeyRound size={16} /> Oppure usa Codice PIN
                       </button>
                    </div>
               ) : (
@@ -436,45 +423,10 @@ function App() {
                 </div>
            )}
 
-            {/* DEBUG MODAL */}
-            {showDebug && (
-                 <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 text-green-400 font-mono">
-                     <div className="w-full max-w-3xl border border-green-500 p-4 rounded bg-black h-[80vh] flex flex-col">
-                         <div className="flex justify-between items-center mb-4 border-b border-green-800 pb-2">
-                             <h3 className="font-bold flex items-center gap-2"><Bug /> Diagnostica Tastiera</h3>
-                             <button onClick={() => setShowDebug(false)} className="text-red-500 font-bold">[CHIUDI X]</button>
-                         </div>
-                         <div className="mb-4">
-                             <p>Clicca nella casella qui sotto e passa il badge.</p>
-                             <input 
-                                ref={debugInputRef} 
-                                type="text" 
-                                className="w-full bg-slate-900 border border-green-700 text-white p-2 mt-2 outline-none focus:border-green-400" 
-                                placeholder="Focus qui..."
-                                autoFocus
-                             />
-                         </div>
-                         <div className="flex-1 overflow-y-auto space-y-1 text-xs">
-                             {debugLogs.length === 0 && <p className="opacity-50">In attesa di input...</p>}
-                             {debugLogs.map((log, i) => (
-                                 <div key={i} className="border-b border-green-900/50 pb-1">{log}</div>
-                             ))}
-                         </div>
-                     </div>
-                 </div>
-            )}
-
         </div>
 
         {/* Bottom Right Tools */}
         <div className="absolute bottom-4 right-4 flex gap-2">
-            <button 
-                onClick={() => setShowDebug(true)}
-                className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-slate-800 rounded-full transition shadow-sm"
-                title="Test Lettore (Debug)"
-            >
-                <Bug size={16} />
-            </button>
             <button 
                 onClick={() => setShowKioskPinPad(true)}
                 className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-slate-800 rounded-full transition shadow-sm"

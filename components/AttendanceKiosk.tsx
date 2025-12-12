@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, AttendanceRecord, Role } from '../types';
-import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Plug } from 'lucide-react';
+import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Wifi } from 'lucide-react';
 
 interface Props {
   employees: Employee[];
@@ -61,7 +61,7 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
           setSelectedEmp(emp);
           setScanValue('');
       } else {
-          setMessage(`Badge non riconosciuto: ${cleanCode}`);
+          setMessage(`Badge non riconosciuto`);
           setScanValue('');
           setTimeout(() => setMessage(null), 3000);
       }
@@ -155,45 +155,49 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
         <div className="w-full max-w-5xl flex flex-col items-center">
           
           {message && (
-             <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg font-bold animate-bounce text-center">
+             <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg font-bold animate-bounce text-center shadow-lg">
                  {message}
              </div>
           )}
 
           {nfcEnabled ? (
-              <div className="flex flex-col items-center animate-fade-in w-full max-w-md">
+              <div className="flex flex-col items-center animate-fade-in w-full max-w-md relative">
                   
-                  {/* SCANNER INPUT AREA - VISIBLE FOR DEBUGGING AND RELIABILITY */}
-                  <div className="relative w-full mb-8">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Scan className="text-slate-400" />
-                      </div>
-                      <input 
-                          ref={inputRef}
-                          type="text" 
-                          value={scanValue}
-                          onChange={(e) => setScanValue(e.target.value)}
-                          onKeyDown={handleInputKeyDown}
-                          placeholder="Clicca qui e passa il badge..."
-                          className="w-full pl-10 pr-4 py-4 bg-slate-50 border-2 border-slate-200 focus:border-[#EC1D25] rounded-xl text-lg outline-none transition shadow-inner text-center font-mono tracking-widest uppercase"
-                          autoComplete="off"
-                          autoFocus
-                      />
-                      <div className="absolute inset-y-0 right-0 pr-2 flex items-center">
-                          <button onClick={() => setScanValue('')} className="p-2 text-slate-400 hover:text-slate-600"><X size={16}/></button>
-                      </div>
+                  {/* INVISIBLE SCANNER INPUT */}
+                  <input 
+                      ref={inputRef}
+                      type="text" 
+                      value={scanValue}
+                      onChange={(e) => setScanValue(e.target.value)}
+                      onKeyDown={handleInputKeyDown}
+                      className="absolute inset-0 opacity-0 cursor-default z-0"
+                      autoComplete="off"
+                      autoFocus
+                  />
+                  
+                  {/* VISUAL SCANNING ANIMATION */}
+                  <div className="relative w-64 h-64 mb-8 flex items-center justify-center cursor-pointer z-10" onClick={() => inputRef.current?.focus()}>
+                       {/* Ripples */}
+                       <div className="absolute inset-0 bg-[#EC1D25] rounded-full animate-ping opacity-10"></div>
+                       <div className="absolute inset-4 bg-[#EC1D25] rounded-full animate-pulse opacity-5 delay-75"></div>
+                       <div className="absolute inset-8 bg-[#EC1D25] rounded-full animate-pulse opacity-5 delay-150"></div>
+                       
+                       {/* Central Icon */}
+                       <div className="relative bg-white p-8 rounded-full shadow-2xl border-4 border-slate-50 text-[#EC1D25]">
+                           <Wifi size={64} className="animate-pulse" />
+                       </div>
                   </div>
                   
-                  <div className="flex items-center justify-center gap-2 mb-8 text-slate-400 text-sm">
-                      <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                      Lettore Pronto
+                  <div className="flex items-center justify-center gap-3 mb-8 bg-slate-100 px-6 py-2 rounded-full shadow-inner border border-slate-200">
+                      <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
+                      <span className="text-slate-500 font-bold uppercase tracking-wider text-sm">Lettore Pronto</span>
                   </div>
 
                   <button 
                     onClick={() => setShowPinPad(true)}
-                    className="flex items-center gap-2 text-slate-500 hover:text-[#EC1D25] transition border px-6 py-2 rounded-full hover:bg-slate-50"
+                    className="flex items-center gap-2 text-slate-400 hover:text-[#EC1D25] transition border border-slate-200 px-8 py-3 rounded-full hover:bg-slate-50 hover:shadow-md z-20 bg-white"
                   >
-                      <KeyRound size={18} /> Usa Codice PIN
+                      <KeyRound size={20} /> Usa Codice PIN
                   </button>
               </div>
           ) : (
