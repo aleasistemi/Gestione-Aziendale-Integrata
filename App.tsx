@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, ViewMode, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, JobStatus } from './types';
 import { dbService } from './services/db';
@@ -25,10 +26,9 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('LOGIN');
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   
-  // Login NFC/PIN State
-  // Use refs for buffering to ensure we catch fast scanner input without re-renders
-  const nfcBufferRef = useRef('');
-  const nfcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Login NFC State
+  const [scanValue, setScanValue] = useState('');
+  const loginInputRef = useRef<HTMLInputElement>(null);
 
   const [showLoginPinPad, setShowLoginPinPad] = useState(false);
   const [loginPin, setLoginPin] = useState('');
@@ -82,53 +82,39 @@ function App() {
     };
   }, []);
 
-  // Global NFC Listener for Login Screen
+  // Force focus on login scanner input
   useEffect(() => {
-    if (!isAuthenticated || viewMode !== 'LOGIN' || !settings.nfcEnabled) return;
+    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskPinPad) {
+         const focusInterval = setInterval(() => {
+              if (document.activeElement !== loginInputRef.current) {
+                  loginInputRef.current?.focus();
+              }
+          }, 500);
+          return () => clearInterval(focusInterval);
+    }
+  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskPinPad]);
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-        if (showLoginPinPad || showKioskPinPad) return; // Don't capture NFC if using PIN pad
+  const processLoginScan = (code: string) => {
+      if (code.length < 2) return;
+      const cleanCode = code.trim().toUpperCase();
+      const emp = employees.find(e => e.nfcCode?.trim().toUpperCase() === cleanCode);
+      
+      if (emp) {
+          handleLogin(emp);
+          setScanValue('');
+      } else {
+          setLoginMessage(`Badge non riconosciuto: ${cleanCode}`);
+          setScanValue('');
+          setTimeout(() => setLoginMessage(null), 3000);
+      }
+  };
 
-        // Clear previous timeout
-        if (nfcTimeoutRef.current) {
-            clearTimeout(nfcTimeoutRef.current);
-        }
-
-        // Set timeout to clear buffer if input stops (end of scan or manual typing pause)
-        nfcTimeoutRef.current = setTimeout(() => {
-            nfcBufferRef.current = '';
-        }, 2000); 
-
-        if (e.key === 'Enter' || e.key === 'Tab') {
-            e.preventDefault(); // Stop default nav
-            const scannedBuffer = nfcBufferRef.current;
-
-            if (scannedBuffer.length > 1) {
-                // Normalize to Uppercase for comparison
-                const scannedCode = scannedBuffer.trim().toUpperCase();
-                const emp = employees.find(e => e.nfcCode?.trim().toUpperCase() === scannedCode);
-                
-                if (emp) {
-                    handleLogin(emp);
-                } else {
-                   setLoginMessage(`Badge non riconosciuto: ${scannedCode}`);
-                   setTimeout(() => setLoginMessage(null), 3000);
-                }
-            }
-            nfcBufferRef.current = '';
-        } else {
-            if (e.key.length === 1) {
-                nfcBufferRef.current += e.key;
-            }
-        }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-        window.removeEventListener('keydown', handleKeyDown);
-        if (nfcTimeoutRef.current) clearTimeout(nfcTimeoutRef.current);
-    };
-  }, [isAuthenticated, viewMode, settings.nfcEnabled, employees, showLoginPinPad, showKioskPinPad]);
+  const handleLoginKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          processLoginScan(scanValue);
+      }
+  };
 
   const verifyAuthToken = (e: React.FormEvent) => {
     e.preventDefault();
@@ -323,13 +309,28 @@ function App() {
             <div className="pt-2">
               
               {settings.nfcEnabled ? (
-                   <div className="flex flex-col items-center py-6">
-                      <div className="animate-pulse mb-4">
-                         <Scan size={48} className="text-slate-400" />
+                   <div className="flex flex-col items-center py-6 w-full">
+                      
+                      {/* VISIBLE SCANNER INPUT FOR LOGIN */}
+                      <div className="relative w-full mb-6">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <Scan className="text-slate-400" />
+                          </div>
+                          <input 
+                              ref={loginInputRef}
+                              type="text" 
+                              value={scanValue}
+                              onChange={(e) => setScanValue(e.target.value)}
+                              onKeyDown={handleLoginKeyDown}
+                              placeholder="Clicca qui e passa il badge..."
+                              className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-200 focus:border-[#EC1D25] rounded-xl text-center font-mono tracking-widest uppercase outline-none"
+                              autoFocus
+                          />
                       </div>
-                      <p className="text-slate-500 font-medium mb-6">Avvicina Badge o Carta</p>
-                      {loginMessage && <p className="text-red-500 font-bold mb-4">{loginMessage}</p>}
-                      <button onClick={() => setShowLoginPinPad(true)} className="flex items-center gap-2 text-blue-600 hover:underline">
+
+                      <p className="text-slate-500 font-medium mb-2">Avvicina Badge</p>
+                      {loginMessage && <p className="text-red-500 font-bold mb-4 animate-pulse">{loginMessage}</p>}
+                      <button onClick={() => setShowLoginPinPad(true)} className="flex items-center gap-2 text-blue-600 hover:underline mt-4">
                           <KeyRound size={16} /> Usa PIN
                       </button>
                    </div>
