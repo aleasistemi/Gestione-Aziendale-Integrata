@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, ViewMode, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, JobStatus } from './types';
 import { dbService } from './services/db';
 import AttendanceKiosk from './components/AttendanceKiosk';
@@ -27,7 +26,10 @@ function App() {
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   
   // Login NFC/PIN State
-  const [nfcBuffer, setNfcBuffer] = useState('');
+  // Use refs for buffering to ensure we catch fast scanner input without re-renders
+  const nfcBufferRef = useRef('');
+  const nfcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [showLoginPinPad, setShowLoginPinPad] = useState(false);
   const [loginPin, setLoginPin] = useState('');
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
@@ -80,14 +82,6 @@ function App() {
     };
   }, []);
 
-  // Auto-clear NFC buffer if idle for 2 seconds (cleans up partial scans)
-  useEffect(() => {
-    if (nfcBuffer.length > 0) {
-        const timer = setTimeout(() => setNfcBuffer(''), 2000);
-        return () => clearTimeout(timer);
-    }
-  }, [nfcBuffer]);
-
   // Global NFC Listener for Login Screen
   useEffect(() => {
     if (!isAuthenticated || viewMode !== 'LOGIN' || !settings.nfcEnabled) return;
@@ -95,34 +89,46 @@ function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
         if (showLoginPinPad || showKioskPinPad) return; // Don't capture NFC if using PIN pad
 
+        // Clear previous timeout
+        if (nfcTimeoutRef.current) {
+            clearTimeout(nfcTimeoutRef.current);
+        }
+
+        // Set timeout to clear buffer if input stops (end of scan or manual typing pause)
+        nfcTimeoutRef.current = setTimeout(() => {
+            nfcBufferRef.current = '';
+        }, 2000); 
+
         if (e.key === 'Enter' || e.key === 'Tab') {
             e.preventDefault(); // Stop default nav
-            if (nfcBuffer.length > 2) {
+            const scannedBuffer = nfcBufferRef.current;
+
+            if (scannedBuffer.length > 1) {
                 // Normalize to Uppercase for comparison
-                const scannedCode = nfcBuffer.trim().toUpperCase();
+                const scannedCode = scannedBuffer.trim().toUpperCase();
                 const emp = employees.find(e => e.nfcCode?.trim().toUpperCase() === scannedCode);
                 
                 if (emp) {
                     handleLogin(emp);
-                    setNfcBuffer('');
                 } else {
-                   setLoginMessage("Badge non riconosciuto");
-                   setTimeout(() => setLoginMessage(null), 2000);
-                   setNfcBuffer('');
+                   setLoginMessage(`Badge non riconosciuto: ${scannedCode}`);
+                   setTimeout(() => setLoginMessage(null), 3000);
                 }
-            } else {
-                setNfcBuffer('');
             }
+            nfcBufferRef.current = '';
         } else {
             if (e.key.length === 1) {
-                setNfcBuffer(prev => prev + e.key);
+                nfcBufferRef.current += e.key;
             }
         }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isAuthenticated, viewMode, settings.nfcEnabled, nfcBuffer, employees, showLoginPinPad, showKioskPinPad]);
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        if (nfcTimeoutRef.current) clearTimeout(nfcTimeoutRef.current);
+    };
+  }, [isAuthenticated, viewMode, settings.nfcEnabled, employees, showLoginPinPad, showKioskPinPad]);
 
   const verifyAuthToken = (e: React.FormEvent) => {
     e.preventDefault();
