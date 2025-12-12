@@ -5,7 +5,7 @@ import { dbService } from './services/db';
 import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
 import AdminDashboard from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Bug, Plug, Zap, Settings } from 'lucide-react';
+import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Bug, Settings } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -40,13 +40,6 @@ function App() {
   // Kiosk Mode Protection
   const [showKioskPinPad, setShowKioskPinPad] = useState(false);
   const [kioskPin, setKioskPin] = useState('');
-
-  // --- SERIAL PORT / COM STATE ---
-  const [isSerialConnected, setIsSerialConnected] = useState(false);
-  const [serialBaudRate, setSerialBaudRate] = useState<number>(9600);
-  const portRef = useRef<any>(null); // Web Serial Port Object
-  const readerRef = useRef<any>(null);
-  const [serialCodeBuffer, setSerialCodeBuffer] = useState<string | null>(null);
 
   // --- DEBUG STATE ---
   const [showDebug, setShowDebug] = useState(false);
@@ -94,113 +87,9 @@ function App() {
     };
   }, []);
 
-  // SERIAL PORT HANDLING LOGIC
-  const connectSerialPort = async () => {
-    if (!('serial' in navigator)) {
-        alert("Il tuo browser non supporta la connessione seriale (Web Serial API). Usa Chrome, Edge o Opera.");
-        return;
-    }
-
-    try {
-        const port = await (navigator as any).serial.requestPort();
-        await port.open({ baudRate: serialBaudRate });
-        portRef.current = port;
-        setIsSerialConnected(true);
-        setLoginMessage(`Lettore connesso a ${serialBaudRate} baud!`);
-        readSerialLoop(port);
-    } catch (err) {
-        console.error("Errore connessione seriale:", err);
-        setLoginMessage("Errore connessione lettore.");
-    }
-  };
-
-  const disconnectSerialPort = async () => {
-      if (readerRef.current) {
-          try {
-              await readerRef.current.cancel();
-              // The loop will exit and release the lock
-          } catch (e) {
-              console.error("Error cancelling reader", e);
-          }
-      }
-      setIsSerialConnected(false);
-  }
-
-  const readSerialLoop = async (port: any) => {
-      // Use Raw Reader (no TextDecoderStream) to catch binary/weird data
-      const reader = port.readable.getReader();
-      readerRef.current = reader;
-
-      let buffer = "";
-
-      try {
-          while (true) {
-              const { value, done } = await reader.read();
-              if (done) {
-                  reader.releaseLock();
-                  break;
-              }
-              if (value) {
-                  // value is Uint8Array
-                  // 1. Convert to Hex for Debugging
-                  const hexValues = Array.from(value).map((byte: any) => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-                  
-                  // 2. Convert to Text for Logic
-                  const textChunk = new TextDecoder().decode(value);
-                  
-                  // Debug Log
-                  const logMsg = `[RAW] ${hexValues} | [TXT] ${textChunk.replace(/\r/g, '\\r').replace(/\n/g, '\\n')}`;
-                  setDebugLogs(prev => [logMsg, ...prev].slice(0, 50));
-
-                  buffer += textChunk;
-
-                  // Check for newline characters (scanners usually end with \r or \n)
-                  if (buffer.includes('\n') || buffer.includes('\r')) {
-                      // Normalize newlines
-                      const normalized = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-                      const lines = normalized.split('\n');
-                      
-                      // Keep the last part in buffer if it doesn't end with newline
-                      // Check if original buffer ended with newline char
-                      const lastChar = buffer[buffer.length - 1];
-                      if (lastChar !== '\n' && lastChar !== '\r') {
-                           buffer = lines.pop() || "";
-                      } else {
-                           buffer = "";
-                      }
-                      
-                      for (const code of lines) {
-                          if (code.trim().length > 1) {
-                              handleSerialScan(code.trim());
-                          }
-                      }
-                  }
-              }
-          }
-      } catch (error) {
-          console.error("Serial read error:", error);
-          setLoginMessage("Errore lettura seriale");
-          setIsSerialConnected(false);
-      }
-  };
-
-  const handleSerialScan = (code: string) => {
-      // Add to debug logs
-      setDebugLogs(prev => [`[SCAN DETECTED] Code: ${code}`, ...prev].slice(0, 50));
-
-      if (viewMode === 'LOGIN') {
-          processLoginScan(code);
-      } else if (viewMode === 'ATTENDANCE_KIOSK') {
-          // Pass to kiosk via state prop
-          setSerialCodeBuffer(code);
-          // Clear it shortly after so the prop changes for next scan
-          setTimeout(() => setSerialCodeBuffer(null), 500);
-      }
-  };
-
-  // Force focus on login scanner input (only if NOT using serial)
+  // Force focus on login scanner input
   useEffect(() => {
-    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskPinPad && !showDebug && !isSerialConnected) {
+    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskPinPad && !showDebug) {
          const focusInterval = setInterval(() => {
               if (document.activeElement !== loginInputRef.current) {
                   loginInputRef.current?.focus();
@@ -208,9 +97,9 @@ function App() {
           }, 500);
           return () => clearInterval(focusInterval);
     }
-  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskPinPad, showDebug, isSerialConnected]);
+  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskPinPad, showDebug]);
 
-  // Debug Listener (Keyboard)
+  // Debug Listener (Keyboard only)
   useEffect(() => {
       if (!showDebug) return;
       
@@ -408,7 +297,6 @@ function App() {
         onRecord={addAttendanceRecord}
         onExit={() => setViewMode('LOGIN')}
         nfcEnabled={settings.nfcEnabled}
-        externalCode={serialCodeBuffer}
       />
     );
   }
@@ -446,36 +334,24 @@ function App() {
                    <div className="flex flex-col items-center py-6 w-full">
                       
                       {/* VISIBLE SCANNER INPUT FOR LOGIN */}
-                      {!isSerialConnected && (
-                          <div className="relative w-full mb-6">
-                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                  <Scan className="text-slate-400" />
-                              </div>
-                              <input 
-                                  ref={loginInputRef}
-                                  type="text" 
-                                  value={scanValue}
-                                  onChange={(e) => setScanValue(e.target.value)}
-                                  onKeyDown={handleLoginKeyDown}
-                                  placeholder="Clicca qui e passa il badge..."
-                                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-200 focus:border-[#EC1D25] rounded-xl text-center font-mono tracking-widest uppercase outline-none"
-                                  autoFocus
-                              />
+                      <div className="relative w-full mb-6">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <Scan className="text-slate-400" />
                           </div>
-                      )}
+                          <input 
+                              ref={loginInputRef}
+                              type="text" 
+                              value={scanValue}
+                              onChange={(e) => setScanValue(e.target.value)}
+                              onKeyDown={handleLoginKeyDown}
+                              placeholder="Clicca qui e passa il badge..."
+                              className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-200 focus:border-[#EC1D25] rounded-xl text-center font-mono tracking-widest uppercase outline-none"
+                              autoFocus
+                          />
+                      </div>
                       
-                      {isSerialConnected ? (
-                          <div className="flex flex-col items-center mb-6 text-green-600 bg-green-50 p-4 rounded-xl w-full border border-green-200">
-                               <Plug size={40} className="mb-2" />
-                               <span className="font-bold">Lettore Seriale CONNESSO</span>
-                               <span className="text-xs">Velocità: {serialBaudRate} baud</span>
-                               <span className="text-xs mt-1">Passa il badge per entrare</span>
-                               <button onClick={disconnectSerialPort} className="mt-2 text-xs text-red-500 hover:underline">Disconnetti</button>
-                          </div>
-                      ) : (
-                          <p className="text-slate-500 font-medium mb-2">Avvicina Badge</p>
-                      )}
-
+                      <p className="text-slate-500 font-medium mb-2">Avvicina Badge</p>
+                      
                       {loginMessage && <p className="text-red-500 font-bold mb-4 animate-pulse">{loginMessage}</p>}
                       <button onClick={() => setShowLoginPinPad(true)} className="flex items-center gap-2 text-blue-600 hover:underline mt-4">
                           <KeyRound size={16} /> Usa PIN
@@ -565,17 +441,23 @@ function App() {
                  <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 text-green-400 font-mono">
                      <div className="w-full max-w-3xl border border-green-500 p-4 rounded bg-black h-[80vh] flex flex-col">
                          <div className="flex justify-between items-center mb-4 border-b border-green-800 pb-2">
-                             <h3 className="font-bold flex items-center gap-2"><Bug /> Diagnostica Lettore</h3>
+                             <h3 className="font-bold flex items-center gap-2"><Bug /> Diagnostica Tastiera</h3>
                              <button onClick={() => setShowDebug(false)} className="text-red-500 font-bold">[CHIUDI X]</button>
                          </div>
-                         <div className="mb-4 text-sm text-slate-400">
-                             <p>Se vedi dati RAW (es. 02 4A...) ma non TXT, la velocità è sbagliata.</p>
-                             <p className="font-bold text-white">Velocità attuale: {serialBaudRate}</p>
+                         <div className="mb-4">
+                             <p>Clicca nella casella qui sotto e passa il badge.</p>
+                             <input 
+                                ref={debugInputRef} 
+                                type="text" 
+                                className="w-full bg-slate-900 border border-green-700 text-white p-2 mt-2 outline-none focus:border-green-400" 
+                                placeholder="Focus qui..."
+                                autoFocus
+                             />
                          </div>
                          <div className="flex-1 overflow-y-auto space-y-1 text-xs">
                              {debugLogs.length === 0 && <p className="opacity-50">In attesa di input...</p>}
                              {debugLogs.map((log, i) => (
-                                 <div key={i} className="border-b border-green-900/50 pb-1 break-all">{log}</div>
+                                 <div key={i} className="border-b border-green-900/50 pb-1">{log}</div>
                              ))}
                          </div>
                      </div>
@@ -585,30 +467,7 @@ function App() {
         </div>
 
         {/* Bottom Right Tools */}
-        <div className="absolute bottom-4 right-4 flex gap-2 items-end">
-            {!isSerialConnected && (
-                <div className="flex items-center gap-2 bg-white/80 p-1 rounded-full shadow-sm animate-fade-in backdrop-blur-sm">
-                    <select 
-                        className="text-xs bg-transparent border-none outline-none text-slate-600 font-bold px-1 w-20 text-right appearance-none cursor-pointer" 
-                        value={serialBaudRate}
-                        onChange={(e) => setSerialBaudRate(parseInt(e.target.value))}
-                        title="Velocità in Baud"
-                    >
-                        <option value="9600">9600</option>
-                        <option value="19200">19200</option>
-                        <option value="38400">38400</option>
-                        <option value="57600">57600</option>
-                        <option value="115200">115200</option>
-                    </select>
-                    <button 
-                        onClick={connectSerialPort}
-                        className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition shadow-md"
-                        title="Connetti Lettore COM/USB (Web Serial API)"
-                    >
-                        <Plug size={16} />
-                    </button>
-                </div>
-            )}
+        <div className="absolute bottom-4 right-4 flex gap-2">
             <button 
                 onClick={() => setShowDebug(true)}
                 className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-slate-800 rounded-full transition shadow-sm"

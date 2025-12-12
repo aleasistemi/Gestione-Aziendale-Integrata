@@ -8,10 +8,9 @@ interface Props {
   onRecord: (record: AttendanceRecord) => void;
   onExit: () => void;
   nfcEnabled: boolean;
-  externalCode?: string | null; // New prop for Serial Port data
 }
 
-const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnabled, externalCode }) => {
+const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnabled }) => {
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [message, setMessage] = useState<string | null>(null);
@@ -37,14 +36,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  // Listen for External Code (Serial Port) changes
-  useEffect(() => {
-      if (externalCode) {
-          console.log("Kiosk received external code:", externalCode);
-          processScan(externalCode);
-      }
-  }, [externalCode]);
 
   // Force focus on the scanner input continuously if not in a modal
   useEffect(() => {
