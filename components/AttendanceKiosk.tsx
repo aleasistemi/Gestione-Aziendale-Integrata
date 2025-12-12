@@ -35,16 +35,28 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
     return () => clearInterval(timer);
   }, []);
 
+  // Auto-clear NFC buffer if idle for 2 seconds (cleans up partial scans)
+  useEffect(() => {
+    if (nfcBuffer.length > 0) {
+        const timer = setTimeout(() => setNfcBuffer(''), 2000);
+        return () => clearTimeout(timer);
+    }
+  }, [nfcBuffer]);
+
   // NFC Listener
   useEffect(() => {
     if (!nfcEnabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-        if (selectedEmp || showExitPinPad) return; // Don't scan if user already selected/acting or exiting
+        if (selectedEmp || showExitPinPad || showPinPad) return; // Don't scan if user already selected/acting or entering PIN
 
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault(); // Prevent default navigation
             if (nfcBuffer.length > 2) { // Minimum length check
-                const emp = employees.find(e => e.nfcCode === nfcBuffer);
+                // Normalize to Uppercase for comparison
+                const scannedCode = nfcBuffer.trim().toUpperCase();
+                const emp = employees.find(e => e.nfcCode?.trim().toUpperCase() === scannedCode);
+                
                 if (emp) {
                     setSelectedEmp(emp);
                     setNfcBuffer('');
@@ -57,17 +69,16 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
                 setNfcBuffer('');
             }
         } else {
-            // Only alphanumeric chars
+            // Only capture alphanumeric chars (ignore Shift, Control, etc.)
             if (e.key.length === 1) {
                 setNfcBuffer(prev => prev + e.key);
-                // Clear buffer if too long without Enter (timeout mechanism could be added)
             }
         }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nfcEnabled, nfcBuffer, employees, selectedEmp, showExitPinPad]);
+  }, [nfcEnabled, nfcBuffer, employees, selectedEmp, showExitPinPad, showPinPad]);
 
   const handleAction = (type: 'ENTRATA' | 'USCITA') => {
     if (!selectedEmp) return;
