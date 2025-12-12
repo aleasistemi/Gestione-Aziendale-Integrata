@@ -80,6 +80,14 @@ function App() {
     };
   }, []);
 
+  // Auto-clear NFC buffer if idle for 2 seconds (cleans up partial scans)
+  useEffect(() => {
+    if (nfcBuffer.length > 0) {
+        const timer = setTimeout(() => setNfcBuffer(''), 2000);
+        return () => clearTimeout(timer);
+    }
+  }, [nfcBuffer]);
+
   // Global NFC Listener for Login Screen
   useEffect(() => {
     if (!isAuthenticated || viewMode !== 'LOGIN' || !settings.nfcEnabled) return;
@@ -87,9 +95,13 @@ function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
         if (showLoginPinPad || showKioskPinPad) return; // Don't capture NFC if using PIN pad
 
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault(); // Stop default nav
             if (nfcBuffer.length > 2) {
-                const emp = employees.find(e => e.nfcCode === nfcBuffer);
+                // Normalize to Uppercase for comparison
+                const scannedCode = nfcBuffer.trim().toUpperCase();
+                const emp = employees.find(e => e.nfcCode?.trim().toUpperCase() === scannedCode);
+                
                 if (emp) {
                     handleLogin(emp);
                     setNfcBuffer('');
