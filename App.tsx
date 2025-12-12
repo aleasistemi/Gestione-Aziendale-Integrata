@@ -340,7 +340,7 @@ function App() {
                       <p className="text-slate-500 font-medium mb-2 mt-2">Avvicina il Badge al lettore...</p>
                       
                       {loginMessage && <p className="text-red-500 font-bold mb-4 animate-bounce bg-red-50 px-4 py-2 rounded-lg">{loginMessage}</p>}
-                      <button onClick={() => setShowLoginPinPad(true)} className="flex items-center gap-2 text-blue-600 hover:underline mt-4 text-sm font-medium">
+                      <button onClick={() => setShowLoginPinPad(true)} className="relative z-10 flex items-center gap-2 text-blue-600 hover:underline mt-4 text-sm font-medium">
                           <KeyRound size={16} /> Oppure usa Codice PIN
                       </button>
                    </div>
