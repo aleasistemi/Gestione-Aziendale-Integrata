@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key } from 'lucide-react';
+import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser } from 'lucide-react';
 import { analyzeBusinessData } from '../services/geminiService';
 import { read, utils, writeFile } from 'xlsx';
 import { dbService } from '../services/db';
@@ -285,6 +285,18 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
     }
   };
 
+  const handleResetJobs = async () => {
+      if (window.confirm("ATTENZIONE: Stai per eliminare TUTTE le commesse e le registrazioni delle ore lavorate.\n\nQuesta azione NON è reversibile.\n\nSei sicuro di voler procedere per pulire l'archivio?")) {
+          try {
+              await dbService.resetJobsAndLogs();
+              alert("Archivio pulito con successo. La pagina verrà ricaricata.");
+              window.location.reload();
+          } catch(e) {
+              alert("Errore durante la pulizia. Controlla la console.");
+          }
+      }
+  }
+
   // --- Import Logic ---
   const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -299,6 +311,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
           const data = utils.sheet_to_json(ws, { header: 1 }); // Array of arrays
 
           let jobsCreated = 0;
+          let jobsUpdated = 0;
           let logsCreated = 0;
           let currentJob: Partial<Job> | null = null;
           let lastJobId: string | null = null;
@@ -357,28 +370,37 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
               // Check if we need to create/find the job first
               if (code) {
+                  const cleanCode = String(code);
                   // Check if job exists in DB
-                  let job = jobs.find(j => j.code === String(code));
-                  if (!job && currentJob?.code !== String(code)) {
-                      // Create new job container
-                      const newJobId = Date.now().toString() + Math.random();
-                      const jobData: Job = {
-                          id: newJobId,
-                          code: String(code),
-                          clientName: String(getCol(row, 'Cliente') || 'Sconosciuto'),
-                          description: String(getCol(row, 'Descrizione') || ''),
-                          status: JobStatus.IN_PROGRESS,
-                          budgetHours: Number(getCol(row, 'Monte Ore') || 0),
-                          budgetValue: Number(getCol(row, 'Valore') || 0),
-                          deadline: formatDate(getCol(row, 'Data Consegna')),
-                          priority: 3
-                      };
+                  let job = jobs.find(j => j.code === cleanCode);
+                  
+                  const jobData: Job = {
+                      id: job ? job.id : (Date.now().toString() + Math.random()),
+                      code: cleanCode,
+                      clientName: String(getCol(row, 'Cliente') || 'Sconosciuto'),
+                      description: String(getCol(row, 'Descrizione') || ''),
+                      status: job ? job.status : JobStatus.IN_PROGRESS, // Mantieni stato se esiste
+                      budgetHours: Number(getCol(row, 'Monte Ore') || 0),
+                      budgetValue: Number(getCol(row, 'Valore') || 0),
+                      deadline: formatDate(getCol(row, 'Data Consegna')),
+                      priority: job ? (job.priority || 3) : 3,
+                      suggestedOperatorId: job?.suggestedOperatorId
+                  };
+
+                  if (!job && currentJob?.code !== cleanCode) {
+                      // New Job
                       onSaveJob(jobData);
                       jobsCreated++;
                       currentJob = jobData;
-                      lastJobId = newJobId;
+                      lastJobId = jobData.id;
                   } else if (job) {
+                      // Update Existing Job (Overwrite)
+                      onSaveJob(jobData); // Updates properties like Budget/Client/Description
+                      if (lastJobId !== job.id) {
+                          jobsUpdated++;
+                      }
                       lastJobId = job.id;
+                      currentJob = jobData;
                   }
               }
 
@@ -438,7 +460,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                   }
               }
           }
-          alert(`Importazione Completata!\nCommesse Create/Aggiornate: ${jobsCreated}\nRegistrazioni Ore Create: ${logsCreated}`);
+          alert(`Importazione Completata!\nNuove Commesse: ${jobsCreated}\nCommesse Aggiornate: ${jobsUpdated}\nRegistrazioni Ore: ${logsCreated}`);
           window.location.reload();
       };
       reader.readAsBinaryString(file);
@@ -1163,8 +1185,9 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                             <h2 className="text-xl font-bold text-slate-800">Elenco Commesse</h2>
                             <div className="flex gap-2">
                               <input type="file" accept=".xlsx, .xls, .xml" onChange={handleExcelImport} className="hidden" ref={fileInputRef} />
-                              {(isGodMode) && <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"><FileSpreadsheet size={18} /> Importa</button>}
+                              {(isGodMode) && <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"><FileSpreadsheet size={18} /> Importa/Aggiorna</button>}
                               {(isGodMode) && <button onClick={() => handleExcelExportJobs(sortedManageJobs)} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition"><Download size={18} /> Export</button>}
+                              {(isSystem) && <button onClick={handleResetJobs} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"><Eraser size={18} /> Svuota Archivio Commesse</button>}
                               <button onClick={() => setIsEditingJob({})} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"><Plus size={18} /> Nuova</button>
                             </div>
                         </div>

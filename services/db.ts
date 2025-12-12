@@ -216,6 +216,29 @@ class DatabaseService {
       }
   }
 
+  // NUOVA FUNZIONE: Cancella tutte le commesse e i log
+  async resetJobsAndLogs(): Promise<void> {
+      try {
+          const jobsSnap = await getDocs(collection(db, 'jobs'));
+          const logsSnap = await getDocs(collection(db, 'logs'));
+          
+          const batch = writeBatch(db);
+          
+          jobsSnap.docs.forEach((d) => {
+              batch.delete(d.ref);
+          });
+          
+          logsSnap.docs.forEach((d) => {
+              batch.delete(d.ref);
+          });
+
+          await batch.commit();
+      } catch (e) {
+          console.error("Errore reset dati:", e);
+          throw e;
+      }
+  }
+
   async exportDatabase(): Promise<string> {
     const data = await this.getAllData();
     return JSON.stringify(data, null, 2);
