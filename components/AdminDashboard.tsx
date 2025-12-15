@@ -196,8 +196,16 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       const isOverBudget = totalHoursUsed > job.budgetHours;
       const profitMargin = job.budgetValue - totalCost;
 
-      // Find Start Date (First Log)
-      const sortedLogs = [...jobLogs].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      // Find Start Date (First Log) & Last Phase
+      // Improved sorting to ensure strict order even on same day logs
+      const sortedLogs = [...jobLogs].sort((a,b) => {
+          const dateA = new Date(a.date).getTime();
+          const dateB = new Date(b.date).getTime();
+          if (dateA !== dateB) return dateA - dateB;
+          // Tie-breaker: ID string comparison (assuming chronologically generated IDs like Date.now())
+          return a.id.localeCompare(b.id);
+      });
+
       const startDate = sortedLogs.length > 0 ? sortedLogs[0].date : '-';
       const lastLog = sortedLogs.length > 0 ? sortedLogs[sortedLogs.length - 1] : null;
       const lastPhase = lastLog ? lastLog.phase : '-';
@@ -1237,9 +1245,14 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                         </h4>
                          <ul className="space-y-2 text-sm">
                             {expiringJobs.map(j => (
-                                <li key={j.id} className="flex justify-between border-b border-orange-100 pb-1">
-                                    <span className="font-medium text-orange-900 truncate max-w-[120px]">{j.code}</span>
-                                    <span className="font-bold text-orange-700">{new Date(j.deadline).toLocaleDateString('it-IT', {day:'2-digit', month:'2-digit'})}</span>
+                                <li key={j.id} className="flex justify-between items-center border-b border-orange-100 pb-1">
+                                    <div className="flex flex-col overflow-hidden mr-2">
+                                        <span className="font-bold text-orange-900 truncate text-xs">{j.code}</span>
+                                        <span className="text-[10px] text-orange-800 truncate">{j.clientName}</span>
+                                    </div>
+                                    <span className="font-bold text-orange-700 whitespace-nowrap text-xs">
+                                        {new Date(j.deadline).toLocaleDateString('it-IT', {day:'2-digit', month:'2-digit'})}
+                                    </span>
                                 </li>
                             ))}
                             {expiringJobs.length === 0 && <li className="text-slate-500 italic">Nessuna scadenza prossima.</li>}
@@ -1639,268 +1652,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                     </div>
                 )}
              </div>
-        )}
-
-        {/* AI Section */}
-        {activeTab === 'AI' && (
-             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                 {!settings.geminiApiKey ? (
-                     <div className="flex flex-col items-center justify-center py-12 text-center">
-                         <div className="bg-orange-100 p-4 rounded-full mb-4"><Key className="text-orange-500" size={32}/></div>
-                         <h3 className="text-xl font-bold text-slate-800 mb-2">Configurazione Richiesta</h3>
-                         <p className="text-slate-500 max-w-md mb-6">Per utilizzare l'analista AI, è necessario inserire una API Key di Google Gemini valida nelle impostazioni.</p>
-                         <button onClick={() => {if(isSystem) setActiveTab('CONFIG')}} className="text-blue-600 font-bold hover:underline">Vai alla Configurazione</button>
-                     </div>
-                 ) : (
-                 <>
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-2 rounded-lg"><BrainCircuit size={24} /></div>
-                        <div>
-                            <h2 className="text-xl font-bold text-slate-800">Analista Aziendale IA</h2>
-                            <p className="text-slate-500 text-sm">Analisi predittiva e insight sui dati aziendali</p>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-                        {customPrompts.map((prompt) => (
-                            <div key={prompt.id} className="relative group">
-                                {editingPromptId === prompt.id ? (
-                                    <div className="p-3 bg-white border-2 border-blue-500 rounded-lg shadow-lg z-10 absolute top-0 left-0 w-full min-w-[200px]">
-                                        <input type="text" className="w-full text-xs font-bold mb-2 border-b outline-none" value={tempPromptLabel} onChange={(e) => setTempPromptLabel(e.target.value)} placeholder="Etichetta"/>
-                                        <textarea className="w-full text-xs p-1 border rounded resize-none outline-none mb-2" rows={3} value={tempPromptText} onChange={(e) => setTempPromptText(e.target.value)} placeholder="Domanda per IA..."/>
-                                        <div className="flex justify-end gap-1"><button onClick={() => setEditingPromptId(null)} className="p-1 hover:bg-slate-100 rounded text-slate-500"><X size={14}/></button><button onClick={() => handleSavePrompt(prompt.id)} className="p-1 hover:bg-green-100 text-green-600 rounded"><Save size={14}/></button></div>
-                                    </div>
-                                ) : (
-                                    <button onClick={() => handleAskAI(prompt.prompt)} className="w-full p-3 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 border border-slate-200 rounded-lg text-left transition relative h-full flex flex-col justify-between group-hover:shadow-md">
-                                        <span className="text-sm font-semibold text-slate-700 block mb-1">{prompt.label}</span>
-                                        <span className="text-xs text-slate-400 line-clamp-2">{prompt.prompt}</span>
-                                        <div onClick={(e) => { e.stopPropagation(); setEditingPromptId(prompt.id); setTempPromptLabel(prompt.label); setTempPromptText(prompt.prompt); }} className="absolute top-2 right-2 p-1 text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition"><Pencil size={12} /></div>
-                                    </button>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 min-h-[200px] mb-4 shadow-inner">
-                        {aiResponse ? (
-                            <div className="prose prose-sm max-w-none text-slate-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }} />
-                        ) : (
-                            <div className="text-center text-slate-400 py-16 flex flex-col items-center gap-3">
-                                {isLoadingAi ? <Loader2 className="animate-spin text-blue-500" size={32}/> : <div className="flex flex-col items-center"><BrainCircuit size={48} className="text-slate-300 mb-2"/><span>Seleziona una domanda rapida o scrivi la tua richiesta qui sotto.</span></div>}
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex gap-2 relative">
-                        <input type="text" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="Fai una domanda libera sui tuoi dati..." className="flex-1 border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none pl-12 shadow-sm"/>
-                        <div className="absolute left-4 top-3.5 text-slate-400"><Info size={20}/></div>
-                        <button onClick={() => handleAskAI()} disabled={!aiPrompt || isLoadingAi} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 shadow-sm">{isLoadingAi ? 'Analisi...' : 'Chiedi'}</button>
-                    </div>
-                 </>
-                 )}
-            </div>
-        )}
-
-        {activeTab === 'MANAGE' && (
-            <div className="space-y-6">
-                <div className="flex gap-4 mb-6">
-                    <button onClick={() => setManageSubTab('JOBS')} className={`px-4 py-2 rounded-lg font-medium transition ${manageSubTab === 'JOBS' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>Gestione Commesse</button>
-                    {(canManageEmployees || isSystem) && <button onClick={() => setManageSubTab('EMPLOYEES')} className={`px-4 py-2 rounded-lg font-medium transition ${manageSubTab === 'EMPLOYEES' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>Gestione Dipendenti</button>}
-                </div>
-
-                {manageSubTab === 'JOBS' && (
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                        {/* Header controls same as before */}
-                        <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-                            <h2 className="text-xl font-bold text-slate-800">Elenco Commesse</h2>
-                            <div className="flex gap-2">
-                              <input type="file" accept=".xlsx, .xls, .xml" onChange={handleExcelImport} className="hidden" ref={fileInputRef} />
-                              {(isGodMode) && <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"><FileSpreadsheet size={18} /> Importa/Aggiorna</button>}
-                              {(isGodMode) && <button onClick={() => handleExcelExportJobs(sortedManageJobs)} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition"><Download size={18} /> Export</button>}
-                              {(isSystem) && <button onClick={handleResetJobs} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"><Eraser size={18} /> Svuota Archivio Commesse</button>}
-                              <button onClick={() => setIsEditingJob({})} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"><Plus size={18} /> Nuova</button>
-                            </div>
-                        </div>
-                        
-                        {/* New Job Modal with Notes */}
-                        {isEditingJob && (
-                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                                <div className="bg-white p-6 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                                    <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">{isEditingJob.id ? 'Modifica Commessa' : 'Nuova Commessa'}</h3><button onClick={() => setIsEditingJob(null)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div><label className="block text-sm font-medium text-slate-700">Codice</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.code || ''} onChange={e => setIsEditingJob({...isEditingJob, code: e.target.value})} /></div>
-                                        <div><label className="block text-sm font-medium text-slate-700">Cliente</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.clientName || ''} onChange={e => setIsEditingJob({...isEditingJob, clientName: e.target.value})} /></div>
-                                        <div className="col-span-2"><label className="block text-sm font-medium text-slate-700">Descrizione</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.description || ''} onChange={e => setIsEditingJob({...isEditingJob, description: e.target.value})} /></div>
-                                        <div><label className="block text-sm font-medium text-slate-700">Budget Ore</label><input type="number" className="w-full border p-2 rounded" value={isEditingJob.budgetHours || ''} onChange={e => setIsEditingJob({...isEditingJob, budgetHours: parseFloat(e.target.value)})} /></div>
-                                        <div><label className="block text-sm font-medium text-slate-700">Valore (€)</label><input type="number" className="w-full border p-2 rounded" value={isEditingJob.budgetValue || ''} onChange={e => setIsEditingJob({...isEditingJob, budgetValue: parseFloat(e.target.value)})} /></div>
-                                        <div><label className="block text-sm font-medium text-slate-700">Scadenza</label><input type="date" className="w-full border p-2 rounded" value={isEditingJob.deadline || ''} onChange={e => setIsEditingJob({...isEditingJob, deadline: e.target.value})} /></div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700">Priorità</label>
-                                            <div className="flex gap-1 mt-2">
-                                                {[1,2,3,4,5].map(star => (
-                                                    <Star 
-                                                        key={star} 
-                                                        size={24} 
-                                                        className={`cursor-pointer ${star <= (isEditingJob.priority || 3) ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} 
-                                                        onClick={() => setIsEditingJob({...isEditingJob, priority: star})}
-                                                    />
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Assegna a Operatore</label>
-                                            <select 
-                                                className="w-full border p-2 rounded" 
-                                                value={isEditingJob.suggestedOperatorId || ''} 
-                                                onChange={e => setIsEditingJob({...isEditingJob, suggestedOperatorId: e.target.value})}
-                                            >
-                                                <option value="">Nessuno</option>
-                                                {employees.filter(e => e.role === Role.WORKSHOP).map(emp => (
-                                                    <option key={emp.id} value={emp.id}>{emp.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="col-span-2">
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Note Interne</label>
-                                            <textarea 
-                                                className="w-full border p-2 rounded resize-y min-h-[80px]" 
-                                                value={isEditingJob.notes || ''} 
-                                                onChange={e => setIsEditingJob({...isEditingJob, notes: e.target.value})}
-                                                placeholder="Eventuali note tecniche o amministrative..."
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="mt-6 flex justify-end gap-2">
-                                        <button onClick={() => setIsEditingJob(null)} className="px-4 py-2 border rounded hover:bg-slate-50">Annulla</button>
-                                        <button onClick={handleSaveJobForm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva</button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                         
-                        <div className="overflow-x-auto">
-                           <table className="min-w-full divide-y divide-slate-200">
-                               <thead className="bg-slate-50">
-                                   <tr>
-                                       <th onClick={() => requestSort('code', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Codice {renderSortArrow('code', manageJobSort)}</th>
-                                       <th onClick={() => requestSort('clientName', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Cliente {renderSortArrow('clientName', manageJobSort)}</th>
-                                       <th onClick={() => requestSort('priority', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Priorità {renderSortArrow('priority', manageJobSort)}</th>
-                                       <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Budget/Valore</th>
-                                       <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Stato</th>
-                                       <th className="px-6 py-3"></th>
-                                   </tr>
-                               </thead>
-                               <tbody className="bg-white divide-y divide-slate-200">
-                                   {sortedManageJobs.map((job) => (
-                                       <tr key={job.id} className="hover:bg-slate-50">
-                                           <td className="px-6 py-4 font-medium text-slate-900">{job.code}</td>
-                                           <td className="px-6 py-4 text-slate-500">{job.clientName}</td>
-                                           <td className="px-6 py-4 text-slate-500 flex gap-1">
-                                               {Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}
-                                           </td>
-                                           <td className="px-6 py-4 text-slate-500">{job.budgetHours}h / €{job.budgetValue}</td>
-                                           <td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td>
-                                           <td className="px-6 py-4"><button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800"><Edit2 size={18}/></button></td>
-                                       </tr>
-                                   ))}
-                               </tbody>
-                           </table>
-                        </div>
-                    </div>
-                )}
-
-                {/* EMPLOYEES MANAGMENT WITH SECOND BADGE */}
-                {manageSubTab === 'EMPLOYEES' && (canManageEmployees || isSystem) && (
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-bold text-slate-800">Elenco Dipendenti</h2>
-                            <button onClick={() => setIsEditingEmp({})} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"><Plus size={18} /> Nuovo Dipendente</button>
-                        </div>
-
-                         {isEditingEmp && (
-                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                                <div className="bg-white p-6 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                                    <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">{isEditingEmp.id ? 'Modifica Dipendente' : 'Nuovo Dipendente'}</h3><button onClick={() => setIsEditingEmp(null)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div><label className="block text-sm font-medium text-slate-700">Nome e Cognome</label><input type="text" className="w-full border p-2 rounded" value={isEditingEmp.name || ''} onChange={e => setIsEditingEmp({...isEditingEmp, name: e.target.value})} /></div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700">Ruolo</label>
-                                            <select className="w-full border p-2 rounded" value={isEditingEmp.role || Role.EMPLOYEE} onChange={e => setIsEditingEmp({...isEditingEmp, role: e.target.value as Role})}>
-                                                {Object.values(Role).map(r => <option key={r} value={r}>{r}</option>)}
-                                            </select>
-                                        </div>
-                                        <div><label className="block text-sm font-medium text-slate-700">Reparto</label><input type="text" className="w-full border p-2 rounded" value={isEditingEmp.department || ''} onChange={e => setIsEditingEmp({...isEditingEmp, department: e.target.value})} /></div>
-                                        <div><label className="block text-sm font-medium text-slate-700">Costo Orario (€)</label><input type="number" className="w-full border p-2 rounded" value={isEditingEmp.hourlyRate || ''} onChange={e => setIsEditingEmp({...isEditingEmp, hourlyRate: parseFloat(e.target.value)})} /></div>
-                                        
-                                        {/* Security Codes */}
-                                        <div className="border-t col-span-2 pt-4 mt-2 mb-2"><h4 className="font-bold text-slate-700 text-sm">Sicurezza Accessi</h4></div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700">Codice NFC Badge</label>
-                                            <input type="text" className="w-full border p-2 rounded" value={isEditingEmp.nfcCode || ''} onChange={e => setIsEditingEmp({...isEditingEmp, nfcCode: e.target.value})} placeholder="Es. NFC_123" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700">Codice NFC Secondario</label>
-                                            <input type="text" className="w-full border p-2 rounded" value={isEditingEmp.nfcCode2 || ''} onChange={e => setIsEditingEmp({...isEditingEmp, nfcCode2: e.target.value})} placeholder="Badge alternativo" />
-                                        </div>
-                                        <div><label className="block text-sm font-medium text-slate-700">PIN Accesso (4-6 cifre)</label><input type="text" className="w-full border p-2 rounded" value={isEditingEmp.pin || ''} onChange={e => setIsEditingEmp({...isEditingEmp, pin: e.target.value})} placeholder="Es. 1234" /></div>
-
-                                        {/* Scheduling Config */}
-                                        <div className="border-t col-span-2 pt-4 mt-2 mb-2"><h4 className="font-bold text-slate-700 text-sm">Configurazione Orari</h4></div>
-                                        
-                                        <div><label className="block text-sm font-medium text-slate-700">Inizio Mattina</label><input type="time" className="w-full border p-2 rounded" value={isEditingEmp.scheduleStartMorning || '08:30'} onChange={e => setIsEditingEmp({...isEditingEmp, scheduleStartMorning: e.target.value})} /></div>
-                                        <div><label className="block text-sm font-medium text-slate-700">Fine Mattina</label><input type="time" className="w-full border p-2 rounded" value={isEditingEmp.scheduleEndMorning || '12:30'} onChange={e => setIsEditingEmp({...isEditingEmp, scheduleEndMorning: e.target.value})} /></div>
-                                        <div><label className="block text-sm font-medium text-slate-700">Inizio Pomeriggio</label><input type="time" className="w-full border p-2 rounded" value={isEditingEmp.scheduleStartAfternoon || '13:30'} onChange={e => setIsEditingEmp({...isEditingEmp, scheduleStartAfternoon: e.target.value})} /></div>
-                                        <div><label className="block text-sm font-medium text-slate-700">Fine Pomeriggio</label><input type="time" className="w-full border p-2 rounded" value={isEditingEmp.scheduleEndAfternoon || '17:30'} onChange={e => setIsEditingEmp({...isEditingEmp, scheduleEndAfternoon: e.target.value})} /></div>
-                                        
-                                        <div><label className="block text-sm font-medium text-slate-700">Tolleranza Ritardo (min)</label><input type="number" className="w-full border p-2 rounded" value={isEditingEmp.toleranceMinutes || 10} onChange={e => setIsEditingEmp({...isEditingEmp, toleranceMinutes: parseInt(e.target.value)})} /></div>
-                                        
-                                        <div className="col-span-2">
-                                            <label className="block text-sm font-medium text-slate-700 mb-2">Giorni Lavorativi</label>
-                                            <div className="flex gap-4 flex-wrap">
-                                                {['Dom','Lun','Mar','Mer','Gio','Ven','Sab'].map((dayName, idx) => (
-                                                    <label key={idx} className="flex items-center gap-1 text-sm cursor-pointer">
-                                                        <input 
-                                                            type="checkbox" 
-                                                            checked={(isEditingEmp.workDays || [1,2,3,4,5]).includes(idx)}
-                                                            onChange={(e) => {
-                                                                const currentDays = isEditingEmp.workDays || [1,2,3,4,5];
-                                                                let newDays;
-                                                                if(e.target.checked) newDays = [...currentDays, idx];
-                                                                else newDays = currentDays.filter(d => d !== idx);
-                                                                setIsEditingEmp({...isEditingEmp, workDays: newDays});
-                                                            }}
-                                                        />
-                                                        {dayName}
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                    </div>
-                                    <div className="mt-6 flex justify-end gap-2">
-                                        <button onClick={() => setIsEditingEmp(null)} className="px-4 py-2 border rounded hover:bg-slate-50">Annulla</button>
-                                        <button onClick={handleSaveEmpForm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva</button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-slate-200">
-                                <thead className="bg-slate-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Nome</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ruolo</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Reparto</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Costo/h</th><th className="px-6 py-3"></th></tr></thead>
-                                <tbody className="bg-white divide-y divide-slate-200">
-                                    {employees.map((emp) => (
-                                        <tr key={emp.id} className="hover:bg-slate-50">
-                                            <td className="px-6 py-4 font-medium text-slate-900">{emp.name}</td>
-                                            <td className="px-6 py-4 text-slate-500">{emp.role}</td>
-                                            <td className="px-6 py-4 text-slate-500">{emp.department}</td>
-                                            <td className="px-6 py-4 text-slate-500">€{emp.hourlyRate}</td>
-                                            <td className="px-6 py-4"><button onClick={() => setIsEditingEmp(emp)} className="text-blue-600 hover:text-blue-800"><Edit2 size={18}/></button></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
-            </div>
         )}
 
         {/* ... (CONFIG tab updated) ... */}
