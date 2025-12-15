@@ -46,6 +46,7 @@ export interface Job {
   deadline: string;
   priority: number; // 1-5, default 3
   suggestedOperatorId?: string; // Visual note for assignment
+  notes?: string; // Note interne aggiuntive
 }
 
 export interface AttendanceRecord {
