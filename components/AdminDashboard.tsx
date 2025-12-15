@@ -556,7 +556,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       }
   }
 
-  // --- REVISED HR CALCULATIONS (STRICT MODE + EVENING OVERTIME 30m) ---
+  // --- REVISED HR CALCULATIONS (STRICT MODE + CUSTOM SNAPS) ---
   const calculateDailyStats = (empId: string, dateStr: string) => {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return { 
@@ -567,6 +567,9 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
         records: [], justification: null,
         firstInId: null, lunchOutId: null, lunchInId: null, lastOutId: null
     };
+
+    const overtimeSnap = settings.overtimeSnapMinutes || 30;
+    const permessoSnap = settings.permessoSnapMinutes || 15;
 
     const dateObj = new Date(dateStr);
     const dayOfWeek = dateObj.getDay(); // 0=Sun, 6=Sat
@@ -651,15 +654,12 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
     // MORNING SESSION
     if (firstIn && (lunchOut || lastOut)) {
-        // If only 2 records, the second one is treated as lastOut but might be lunch depending on time
-        // But for calculation simplicity, if we have In1 and Out1 (whether it's lunch or final), we calc duration
         const exitMins = lunchOut ? lunchOutMins : lastOutMins; 
         
         // Logic: Start from Schedule if entered early. Start from Entry if entered late.
         const effectiveStart = Math.max(firstInMins, schStartM);
         
-        // Logic: End at Schedule if exited late (Overtime disregarded in morning/lunch per request logic "only evening").
-        // If exited early, End is actual Exit.
+        // Logic: Morning usually no overtime logic applied here per previous request, usually strict to schedule end or actual exit
         const effectiveEnd = Math.min(exitMins, schEndM);
 
         if (effectiveEnd > effectiveStart) {
@@ -672,26 +672,42 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
         // Logic: Start from Schedule if entered early.
         const effectiveStart = Math.max(lunchInMins, schStartA);
         
-        // Logic: Standard Hours capped at Schedule End.
-        const effectiveEnd = Math.min(lastOutMins, schEndA);
+        // --- PERMESSO / EARLY EXIT LOGIC ---
+        // "Quando si esce prima ... voglio un parametro di riferimento ad esempio ogni 15 minuti"
+        // If I leave early, I lose time in blocks.
+        // Example: Exit 17:20 (10 mins early). If snap 15, I lose 0. Paid until 17:30.
+        // Example: Exit 17:14 (16 mins early). If snap 15, I lose 15. Paid until 17:15.
+        
+        let effectiveEnd = lastOutMins;
+        
+        if (lastOutMins < schEndA) {
+            const rawMissing = schEndA - lastOutMins;
+            const deductionMinutes = Math.floor(rawMissing / permessoSnap) * permessoSnap;
+            effectiveEnd = schEndA - deductionMinutes;
+        } else {
+            // Cap standard at schedule end
+            effectiveEnd = schEndA;
+        }
 
         if (effectiveEnd > effectiveStart) {
             standardHours += (effectiveEnd - effectiveStart) / 60;
         }
 
         // --- OVERTIME CALCULATION (EVENING ONLY) ---
-        // Logic: "Straordinario calcolalo in automatico sull'uscita serale ogni 30 minuti"
+        // "Scatta ogni X minuti" (default 30)
         if (lastOutMins > schEndA) {
             const diffMinutes = lastOutMins - schEndA;
-            const blocks = Math.floor(diffMinutes / 30); // 30 min blocks
-            overtime += blocks * 0.5;
+            const blocks = Math.floor(diffMinutes / overtimeSnap);
+            overtime += blocks * (overtimeSnap / 60);
         }
-    } else if (!lunchOut && firstIn && lastOut) {
-        // Continuous shift case (handled by first block mostly, but check evening overtime if applicable)
+    } 
+    // Continuous shift fallback (simplified)
+    else if (!lunchOut && firstIn && lastOut) {
+        // Handle as if it's one big block, applying evening rules
         if (lastOutMins > schEndA) {
              const diffMinutes = lastOutMins - schEndA;
-             const blocks = Math.floor(diffMinutes / 30);
-             overtime += blocks * 0.5;
+             const blocks = Math.floor(diffMinutes / overtimeSnap);
+             overtime += blocks * (overtimeSnap / 60);
         }
     }
 
@@ -924,10 +940,12 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   // Payroll stats calculation based on updated logic
   const payrollStats = useMemo(() => getPayrollData(), [employees, attendance, justifications, selectedMonth]);
 
+  // ... (Render Logic reuse existing layout) ...
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8 print:p-0 print:max-w-none bg-slate-50 min-h-screen">
       
-      {/* Header */}
+      {/* Header & Tabs */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
         <div>
           <h1 className="text-3xl font-bold text-slate-800">
@@ -942,7 +960,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="border-b border-slate-200 print:hidden bg-white px-6 rounded-t-xl">
         <nav className="-mb-px flex space-x-8 overflow-x-auto">
           {availableTabs.map((tab) => (
@@ -963,13 +980,8 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
         </nav>
       </div>
 
-      {/* Content */}
       <div className="min-h-[400px]">
-        
-        {/* ... (Previous Tab Contents OVERVIEW, JOBS, HR, AI remain similar structure) ... */}
-        
-        {/* REUSE PREVIOUS OVERVIEW / HR / AI Sections - Just pasting the updates to the Manage Modal below within context */}
-        
+        {/* Reuse existing Overview, Jobs, HR, AI sections - NO CHANGES to layout, just logic inside HR used above */}
         {activeTab === 'OVERVIEW' && (
              <>
             {/* Report Date Filter (For Print & Display) */}
@@ -1384,7 +1396,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
             </div>
         )}
 
-        {/* HR Section using REVISED CALCULATIONS */}
+        {/* HR Section */}
         {activeTab === 'HR' && (
              <div className="space-y-6">
                 <div className="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
@@ -1558,7 +1570,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
              </div>
         )}
 
-        {/* AI Section */}
+        {/* AI Section (Reuse AI layout from previous) */}
         {activeTab === 'AI' && (
              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                  {!settings.geminiApiKey ? (
@@ -1723,7 +1735,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                     </div>
                 )}
 
-                {/* EMPLOYEES MANAGMENT (Reused from previous, just placeholder here to close the structure) */}
+                {/* EMPLOYEES MANAGMENT WITH SECOND BADGE */}
                 {manageSubTab === 'EMPLOYEES' && (canManageEmployees || isSystem) && (
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                         <div className="flex justify-between items-center mb-6">
@@ -1748,7 +1760,14 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                                         
                                         {/* Security Codes */}
                                         <div className="border-t col-span-2 pt-4 mt-2 mb-2"><h4 className="font-bold text-slate-700 text-sm">Sicurezza Accessi</h4></div>
-                                        <div><label className="block text-sm font-medium text-slate-700">Codice NFC Badge</label><input type="text" className="w-full border p-2 rounded" value={isEditingEmp.nfcCode || ''} onChange={e => setIsEditingEmp({...isEditingEmp, nfcCode: e.target.value})} placeholder="Es. NFC_123" /></div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700">Codice NFC Badge</label>
+                                            <input type="text" className="w-full border p-2 rounded" value={isEditingEmp.nfcCode || ''} onChange={e => setIsEditingEmp({...isEditingEmp, nfcCode: e.target.value})} placeholder="Es. NFC_123" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700">Codice NFC Secondario</label>
+                                            <input type="text" className="w-full border p-2 rounded" value={isEditingEmp.nfcCode2 || ''} onChange={e => setIsEditingEmp({...isEditingEmp, nfcCode2: e.target.value})} placeholder="Badge alternativo" />
+                                        </div>
                                         <div><label className="block text-sm font-medium text-slate-700">PIN Accesso (4-6 cifre)</label><input type="text" className="w-full border p-2 rounded" value={isEditingEmp.pin || ''} onChange={e => setIsEditingEmp({...isEditingEmp, pin: e.target.value})} placeholder="Es. 1234" /></div>
 
                                         {/* Scheduling Config */}
@@ -1813,7 +1832,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
             </div>
         )}
 
-        {/* ... (CONFIG tab remains same) ... */}
+        {/* ... (CONFIG tab updated) ... */}
         {activeTab === 'CONFIG' && isSystem && (
             <div className="space-y-6">
                 {/* 1. Global Settings */}
@@ -1832,6 +1851,30 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                         >
                             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${settings.nfcEnabled ? 'translate-x-6' : 'translate-x-1'}`}/>
                         </button>
+                    </div>
+
+                    {/* Payroll Settings */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Scatto Straordinari (minuti)</label>
+                            <input 
+                                type="number" 
+                                className="w-full border p-2 rounded" 
+                                value={settings.overtimeSnapMinutes || 30} 
+                                onChange={(e) => onSaveSettings({...settings, overtimeSnapMinutes: parseInt(e.target.value)})} 
+                            />
+                            <p className="text-xs text-slate-500 mt-1">Gli straordinari serali verranno conteggiati a blocchi di questi minuti.</p>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Scatto Permessi/Uscita Anticipata (minuti)</label>
+                            <input 
+                                type="number" 
+                                className="w-full border p-2 rounded" 
+                                value={settings.permessoSnapMinutes || 15} 
+                                onChange={(e) => onSaveSettings({...settings, permessoSnapMinutes: parseInt(e.target.value)})} 
+                            />
+                            <p className="text-xs text-slate-500 mt-1">L'uscita anticipata verrà dedotta solo al raggiungimento di questo scatto.</p>
+                        </div>
                     </div>
 
                     {/* API Key Config */}

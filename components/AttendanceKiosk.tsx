@@ -55,7 +55,10 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
       const cleanCode = code.trim().toUpperCase();
       console.log("Checking code:", cleanCode); // Debug
       
-      const emp = employees.find(e => e.nfcCode?.trim().toUpperCase() === cleanCode);
+      const emp = employees.find(e => 
+          (e.nfcCode && e.nfcCode.trim().toUpperCase() === cleanCode) ||
+          (e.nfcCode2 && e.nfcCode2.trim().toUpperCase() === cleanCode)
+      );
                 
       if (emp) {
           setSelectedEmp(emp);
