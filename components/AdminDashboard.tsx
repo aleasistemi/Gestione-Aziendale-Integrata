@@ -556,7 +556,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       }
   }
 
-  // --- REVISED HR CALCULATIONS (CARTELINO STLYE) ---
+  // --- REVISED HR CALCULATIONS (STRICT MODE + EVENING OVERTIME 30m) ---
   const calculateDailyStats = (empId: string, dateStr: string) => {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return { 
@@ -585,51 +585,115 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
     // 2. Identify Key Timestamps (Entrata 1, Uscita 1, Entrata 2, Uscita 2)
     let firstIn: string | null = null;
     let firstInId: string | null = null;
+    let firstInMins: number = 0;
     
     let lunchOut: string | null = null;
     let lunchOutId: string | null = null;
+    let lunchOutMins: number = 0;
     
     let lunchIn: string | null = null;
     let lunchInId: string | null = null;
+    let lunchInMins: number = 0;
     
     let lastOut: string | null = null;
     let lastOutId: string | null = null;
+    let lastOutMins: number = 0;
+
+    const getMinutes = (d: Date) => d.getHours() * 60 + d.getMinutes();
+    const parseTimeStr = (t: string) => {
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
+    };
 
     if (dayAttendance.length > 0 && dayAttendance[0].type === 'ENTRATA') {
-        firstIn = new Date(dayAttendance[0].timestamp).toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        const d = new Date(dayAttendance[0].timestamp);
+        firstIn = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        firstInMins = getMinutes(d);
         firstInId = dayAttendance[0].id;
     }
     
     // Attempt to identify lunch break if there are 4 records
     if (dayAttendance.length >= 2 && dayAttendance[1].type === 'USCITA') {
          // Could be lunch out or final exit if only half day
+         const d = new Date(dayAttendance[1].timestamp);
          if (dayAttendance.length >= 3) {
-             lunchOut = new Date(dayAttendance[1].timestamp).toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+             lunchOut = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+             lunchOutMins = getMinutes(d);
              lunchOutId = dayAttendance[1].id;
          } else {
-             lastOut = new Date(dayAttendance[1].timestamp).toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+             lastOut = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+             lastOutMins = getMinutes(d);
              lastOutId = dayAttendance[1].id;
          }
     }
     if (dayAttendance.length >= 3 && dayAttendance[2].type === 'ENTRATA') {
-        lunchIn = new Date(dayAttendance[2].timestamp).toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        const d = new Date(dayAttendance[2].timestamp);
+        lunchIn = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        lunchInMins = getMinutes(d);
         lunchInId = dayAttendance[2].id;
     }
     if (dayAttendance.length >= 4 && dayAttendance[3].type === 'USCITA') {
-        lastOut = new Date(dayAttendance[3].timestamp).toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        const d = new Date(dayAttendance[3].timestamp);
+        lastOut = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        lastOutMins = getMinutes(d);
         lastOutId = dayAttendance[3].id;
     }
 
-    // 3. Calculate Worked Hours
-    let workedSeconds = 0;
-    for (let i = 0; i < dayAttendance.length - 1; i++) {
-        if (dayAttendance[i].type === 'ENTRATA' && dayAttendance[i+1].type === 'USCITA') {
-            const start = new Date(dayAttendance[i].timestamp);
-            const end = new Date(dayAttendance[i+1].timestamp);
-            workedSeconds += (end.getTime() - start.getTime()) / 1000;
+    // --- STRICT CALCULATION LOGIC ---
+    let standardHours = 0;
+    let overtime = 0;
+
+    // Get Schedule (In Minutes)
+    const schStartM = parseTimeStr(emp.scheduleStartMorning || "08:30");
+    const schEndM = parseTimeStr(emp.scheduleEndMorning || "12:30");
+    const schStartA = parseTimeStr(emp.scheduleStartAfternoon || "13:30");
+    const schEndA = parseTimeStr(emp.scheduleEndAfternoon || "17:30");
+
+    // MORNING SESSION
+    if (firstIn && (lunchOut || lastOut)) {
+        // If only 2 records, the second one is treated as lastOut but might be lunch depending on time
+        // But for calculation simplicity, if we have In1 and Out1 (whether it's lunch or final), we calc duration
+        const exitMins = lunchOut ? lunchOutMins : lastOutMins; 
+        
+        // Logic: Start from Schedule if entered early. Start from Entry if entered late.
+        const effectiveStart = Math.max(firstInMins, schStartM);
+        
+        // Logic: End at Schedule if exited late (Overtime disregarded in morning/lunch per request logic "only evening").
+        // If exited early, End is actual Exit.
+        const effectiveEnd = Math.min(exitMins, schEndM);
+
+        if (effectiveEnd > effectiveStart) {
+            standardHours += (effectiveEnd - effectiveStart) / 60;
         }
     }
-    let workedHours = workedSeconds / 3600;
+
+    // AFTERNOON SESSION
+    if (lunchIn && lastOut) {
+        // Logic: Start from Schedule if entered early.
+        const effectiveStart = Math.max(lunchInMins, schStartA);
+        
+        // Logic: Standard Hours capped at Schedule End.
+        const effectiveEnd = Math.min(lastOutMins, schEndA);
+
+        if (effectiveEnd > effectiveStart) {
+            standardHours += (effectiveEnd - effectiveStart) / 60;
+        }
+
+        // --- OVERTIME CALCULATION (EVENING ONLY) ---
+        // Logic: "Straordinario calcolalo in automatico sull'uscita serale ogni 30 minuti"
+        if (lastOutMins > schEndA) {
+            const diffMinutes = lastOutMins - schEndA;
+            const blocks = Math.floor(diffMinutes / 30); // 30 min blocks
+            overtime += blocks * 0.5;
+        }
+    } else if (!lunchOut && firstIn && lastOut) {
+        // Continuous shift case (handled by first block mostly, but check evening overtime if applicable)
+        if (lastOutMins > schEndA) {
+             const diffMinutes = lastOutMins - schEndA;
+             const blocks = Math.floor(diffMinutes / 30);
+             overtime += blocks * 0.5;
+        }
+    }
 
     // 4. Handle Justifications (Overrides)
     if (justification) {
@@ -641,11 +705,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
         }
     }
 
-    // 5. Calculate Overtime & Standard
-    const EXPECTED_HOURS = 8; // Could be configurable per employee
-    let standardHours = Math.min(workedHours, EXPECTED_HOURS);
-    let overtime = Math.max(0, workedHours - EXPECTED_HOURS);
-
     // 6. Detect Issues
     let isLate = false;
     let isAnomaly = false;
@@ -653,12 +712,8 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
     // Late Logic
     if (firstIn && !justification) {
-        const scheduleStart = emp.scheduleStartMorning || "08:30";
-        const [schH, schM] = scheduleStart.split(':').map(Number);
-        const [inH, inM] = firstIn.split(':').map(Number);
-        const limitMinutes = (schH * 60) + schM + (emp.toleranceMinutes || 10);
-        const entryMinutes = (inH * 60) + inM;
-        if (entryMinutes > limitMinutes) isLate = true;
+        const limitMinutes = schStartM + (emp.toleranceMinutes || 10);
+        if (firstInMins > limitMinutes) isLate = true;
     }
 
     // Anomaly Logic (Missing punches)
@@ -911,6 +966,10 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       {/* Content */}
       <div className="min-h-[400px]">
         
+        {/* ... (Previous Tab Contents OVERVIEW, JOBS, HR, AI remain similar structure) ... */}
+        
+        {/* REUSE PREVIOUS OVERVIEW / HR / AI Sections - Just pasting the updates to the Manage Modal below within context */}
+        
         {activeTab === 'OVERVIEW' && (
              <>
             {/* Report Date Filter (For Print & Display) */}
@@ -1138,7 +1197,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
             </>
         )}
         
-        {/* JOBS SECTION - RESTORED FULL FUNCTIONALITY */}
+        {/* JOBS SECTION, HR SECTION, AI SECTION are reused from previous state, omitted for brevity but presumed present */}
         {activeTab === 'JOBS' && (
              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-50 gap-4">
@@ -1325,7 +1384,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
             </div>
         )}
 
-        {/* HR & PAGHE SECTION - COMPLETELY REDESIGNED */}
+        {/* HR Section using REVISED CALCULATIONS */}
         {activeTab === 'HR' && (
              <div className="space-y-6">
                 <div className="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
@@ -1499,7 +1558,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
              </div>
         )}
 
-        {/* AI Section (Fixed) */}
+        {/* AI Section */}
         {activeTab === 'AI' && (
              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                  {!settings.geminiApiKey ? (
@@ -1577,7 +1636,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                             </div>
                         </div>
                         
-                        {/* New Job Modal with Priority and Suggested Operator */}
+                        {/* New Job Modal with Notes */}
                         {isEditingJob && (
                             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                                 <div className="bg-white p-6 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1602,8 +1661,8 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                                                 ))}
                                             </div>
                                         </div>
-                                        <div className="col-span-2">
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Assegna a Operatore (Suggerimento)</label>
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Assegna a Operatore</label>
                                             <select 
                                                 className="w-full border p-2 rounded" 
                                                 value={isEditingJob.suggestedOperatorId || ''} 
@@ -1614,6 +1673,15 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                                                     <option key={emp.id} value={emp.id}>{emp.name}</option>
                                                 ))}
                                             </select>
+                                        </div>
+                                        <div className="col-span-2">
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Note Interne</label>
+                                            <textarea 
+                                                className="w-full border p-2 rounded resize-y min-h-[80px]" 
+                                                value={isEditingJob.notes || ''} 
+                                                onChange={e => setIsEditingJob({...isEditingJob, notes: e.target.value})}
+                                                placeholder="Eventuali note tecniche o amministrative..."
+                                            />
                                         </div>
                                     </div>
                                     <div className="mt-6 flex justify-end gap-2">
@@ -1655,6 +1723,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                     </div>
                 )}
 
+                {/* EMPLOYEES MANAGMENT (Reused from previous, just placeholder here to close the structure) */}
                 {manageSubTab === 'EMPLOYEES' && (canManageEmployees || isSystem) && (
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                         <div className="flex justify-between items-center mb-6">
