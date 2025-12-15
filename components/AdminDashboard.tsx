@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit } from 'lucide-react';
+import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer } from 'lucide-react';
 import { analyzeBusinessData } from '../services/geminiService';
 import { read, utils, writeFile } from 'xlsx';
 import { dbService } from '../services/db';
@@ -72,7 +72,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   const [jobSort, setJobSort] = useState<SortConfig>(null);
   const [manageJobSort, setManageJobSort] = useState<SortConfig>(null);
 
-  // Date Filtering State
+  // Date Filtering State (Global for Overview and Jobs)
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
 
@@ -216,6 +216,42 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
           return { phase, champion: topEmp[0], hours: topEmp[1] };
       });
   }, [logs, employees]);
+
+  // NEW REPORTS
+  const expiringJobs = useMemo(() => {
+      return jobStats
+        .filter(j => j.status === JobStatus.IN_PROGRESS && j.deadline)
+        .sort((a,b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+        .slice(0, 5);
+  }, [jobStats]);
+
+  const activeOperators = useMemo(() => {
+     // Filter logs based on date range if set
+     const relevantLogs = logs.filter(l => {
+         if (!filterStartDate && !filterEndDate) return true;
+         return (!filterStartDate || l.date >= filterStartDate) && (!filterEndDate || l.date <= filterEndDate);
+     });
+     
+     const map: {[id:string]: number} = {};
+     relevantLogs.forEach(l => {
+         map[l.employeeId] = (map[l.employeeId] || 0) + l.hours;
+     });
+     return Object.entries(map)
+        .map(([id, hours]) => ({ name: employees.find(e=>e.id===id)?.name || 'Unknown', hours }))
+        .sort((a,b) => b.hours - a.hours)
+        .slice(0, 5);
+  }, [logs, employees, filterStartDate, filterEndDate]);
+
+  const recentActivities = useMemo(() => {
+      return [...logs]
+        .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5)
+        .map(l => ({
+            ...l,
+            empName: employees.find(e => e.id === l.employeeId)?.name,
+            jobCode: jobs.find(j => j.id === l.jobId)?.code
+        }));
+  }, [logs, employees, jobs]);
 
 
   const handleAskAI = async (promptText: string = aiPrompt) => {
@@ -840,7 +876,23 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
         
         {activeTab === 'OVERVIEW' && (
              <>
-            {/* Overview content remains unchanged... */}
+            {/* Report Date Filter (For Print & Display) */}
+            <div className="flex justify-between items-center mb-6 print:hidden bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-2 text-slate-600">
+                    <Filter size={18} />
+                    <span className="font-semibold text-sm">Filtra Report per Data:</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 text-sm bg-slate-50 p-2 rounded border border-slate-200">
+                        <Calendar size={14} className="text-slate-400"/>
+                        <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="bg-transparent outline-none text-slate-600 w-32"/>
+                        <span className="text-slate-300">-</span>
+                        <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="bg-transparent outline-none text-slate-600 w-32"/>
+                        {(filterStartDate || filterEndDate) && <button onClick={() => {setFilterStartDate(''); setFilterEndDate('')}}><X size={14}/></button>}
+                    </div>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 print:hidden">
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                     <div className="flex justify-between items-start">
@@ -886,7 +938,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 print:grid-cols-2 print:hidden">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 print:grid-cols-2 print:gap-4">
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                     <h3 className="text-lg font-semibold mb-6 text-slate-700">Ore Lavorate per Cliente</h3>
                     <div className="h-80 w-full">
@@ -928,54 +980,312 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                     </div>
                 </div>
             </div>
+
+            {/* Advanced Reports Section (Restored & Expanded) */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 print:border-none print:shadow-none print:p-0 print-section">
+                <div className="flex justify-between items-center mb-6 print:hidden">
+                    <h3 className="text-xl font-bold text-slate-800">Report Aziendale Dettagliato</h3>
+                    <button onClick={() => window.print()} className="flex items-center gap-2 text-slate-600 hover:text-slate-800 border p-2 rounded hover:bg-slate-50">
+                        <Printer size={18} /> Stampa Report
+                    </button>
+                </div>
+                {/* Print Only Header */}
+                <div className="hidden print:block mb-8 border-b pb-4">
+                    <h1 className="text-2xl font-bold">Report Aziendale Integrato</h1>
+                    <p className="text-slate-500">
+                        Data Stampa: {new Date().toLocaleDateString()} 
+                        {filterStartDate ? ` | Filtro: ${new Date(filterStartDate).toLocaleDateString()} - ${filterEndDate ? new Date(filterEndDate).toLocaleDateString() : 'Oggi'}` : ''}
+                    </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 print:grid-cols-3">
+                    {/* 1. Top Clients */}
+                    <div className="border rounded-lg p-4 bg-slate-50 print:bg-white print:border-slate-300">
+                        <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
+                            <TrendingUp size={18} className="text-green-600"/> Top Clienti (Fatturato)
+                        </h4>
+                        <ul className="space-y-2 text-sm">
+                            {topClientsByRevenue.map(([client, value], idx) => (
+                                <li key={client} className="flex justify-between border-b border-slate-200 pb-1">
+                                    <span className="font-medium text-slate-700">{idx+1}. {client}</span>
+                                    <span className="font-bold text-green-700">€ {value.toLocaleString()}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    {/* 2. Over Budget */}
+                    <div className="border rounded-lg p-4 bg-red-50 print:bg-white print:border-red-200">
+                        <h4 className="font-bold text-red-800 mb-3 flex items-center gap-2">
+                            <AlertTriangle size={18} className="text-red-600"/> Sforamento Budget
+                        </h4>
+                        <ul className="space-y-2 text-sm">
+                            {overBudgetClients.map(([client, stats], idx) => (
+                                <li key={client} className="flex justify-between border-b border-red-100 pb-1">
+                                    <span className="font-medium text-red-900">{client}</span>
+                                    <span className="font-bold text-red-700">+{stats.over.toFixed(0)} h</span>
+                                </li>
+                            ))}
+                            {overBudgetClients.length === 0 && <li className="text-slate-500 italic">Nessun cliente fuori budget.</li>}
+                        </ul>
+                    </div>
+
+                    {/* 3. Phase Leaders */}
+                    <div className="border rounded-lg p-4 bg-blue-50 print:bg-white print:border-blue-200">
+                        <h4 className="font-bold text-blue-800 mb-3 flex items-center gap-2">
+                            <Users size={18} className="text-blue-600"/> Efficienza per Fase
+                        </h4>
+                        <div className="space-y-2 text-sm max-h-48 overflow-y-auto print:max-h-none print:overflow-visible">
+                            {phaseEfficiency.map((stat) => (
+                                <div key={stat.phase} className="flex justify-between border-b border-blue-100 pb-1">
+                                    <span className="font-medium text-blue-900 text-xs uppercase">{stat.phase}</span>
+                                    <span className="text-slate-600 text-xs text-right">
+                                        <span className="font-bold">{stat.champion}</span> ({stat.hours}h)
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 4. Upcoming Deadlines (NEW) */}
+                    <div className="border rounded-lg p-4 bg-orange-50 print:bg-white print:border-orange-200">
+                         <h4 className="font-bold text-orange-800 mb-3 flex items-center gap-2">
+                            <Timer size={18} className="text-orange-600"/> Scadenze Imminenti
+                        </h4>
+                         <ul className="space-y-2 text-sm">
+                            {expiringJobs.map(j => (
+                                <li key={j.id} className="flex justify-between border-b border-orange-100 pb-1">
+                                    <span className="font-medium text-orange-900 truncate max-w-[120px]">{j.code}</span>
+                                    <span className="font-bold text-orange-700">{new Date(j.deadline).toLocaleDateString('it-IT', {day:'2-digit', month:'2-digit'})}</span>
+                                </li>
+                            ))}
+                            {expiringJobs.length === 0 && <li className="text-slate-500 italic">Nessuna scadenza prossima.</li>}
+                        </ul>
+                    </div>
+
+                    {/* 5. Top Operators (NEW) */}
+                    <div className="border rounded-lg p-4 bg-purple-50 print:bg-white print:border-purple-200">
+                        <h4 className="font-bold text-purple-800 mb-3 flex items-center gap-2">
+                            <Star size={18} className="text-purple-600"/> Top Operatori (Ore)
+                        </h4>
+                         <ul className="space-y-2 text-sm">
+                            {activeOperators.map((op, idx) => (
+                                <li key={idx} className="flex justify-between border-b border-purple-100 pb-1">
+                                    <span className="font-medium text-purple-900">{op.name}</span>
+                                    <span className="font-bold text-purple-700">{op.hours.toFixed(1)} h</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    {/* 6. Recent Activity Log (NEW) */}
+                     <div className="border rounded-lg p-4 bg-gray-50 print:bg-white print:border-gray-200">
+                        <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                            <Clock size={18} className="text-gray-600"/> Ultime Attività
+                        </h4>
+                         <ul className="space-y-2 text-sm">
+                            {recentActivities.map((log, idx) => (
+                                <li key={idx} className="flex justify-between border-b border-gray-200 pb-1">
+                                    <div className="flex flex-col">
+                                        <span className="font-medium text-gray-900 text-xs">{log.jobCode}</span>
+                                        <span className="text-[10px] text-gray-500">{log.empName}</span>
+                                    </div>
+                                    <span className="font-bold text-gray-700 text-xs">{log.phase}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                </div>
+            </div>
             </>
         )}
         
-        {/* JOBS SECTION (Reduced for brevity, same as before) */}
+        {/* JOBS SECTION - RESTORED FULL FUNCTIONALITY */}
         {activeTab === 'JOBS' && (
              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                {/* ... (Same table implementation as before) ... */}
-                 <div className="overflow-x-auto p-4">
-                     <p className="text-slate-500 text-sm mb-4">Usa la scheda "Gestione Dati" per modifiche massive o aggiunte.</p>
-                     <table className="min-w-full divide-y divide-slate-200">
+                <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-50 gap-4">
+                    <div className="flex items-center gap-4 flex-wrap">
+                        <h3 className="font-bold text-slate-700">Analisi Dettagliata Commesse</h3>
+                        <div className="flex items-center gap-2 text-sm bg-white p-1 rounded border border-slate-200">
+                            <Calendar size={14} className="text-slate-400 ml-1"/>
+                            <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="outline-none text-slate-600 w-28"/>
+                            <span className="text-slate-300">-</span>
+                            <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="outline-none text-slate-600 w-28"/>
+                            {(filterStartDate || filterEndDate) && <button onClick={() => {setFilterStartDate(''); setFilterEndDate('')}}><X size={14}/></button>}
+                        </div>
+
+                        {selectedJobIds.size > 0 && (
+                            <div className="flex items-center gap-2 bg-white px-3 py-1 rounded shadow-sm border border-slate-200 animate-in fade-in slide-in-from-left-4">
+                                <span className="text-xs font-bold text-blue-600">{selectedJobIds.size} selezionati</span>
+                                <div className="h-4 w-px bg-slate-300 mx-1"></div>
+                                <button onClick={() => handleBulkStatusChange(JobStatus.COMPLETED)} className="text-xs hover:text-green-600 font-medium">Completata</button>
+                                <button onClick={() => handleBulkStatusChange(JobStatus.IN_PROGRESS)} className="text-xs hover:text-blue-600 font-medium">In Corso</button>
+                                <button onClick={() => handleBulkStatusChange(JobStatus.ON_HOLD)} className="text-xs hover:text-orange-600 font-medium">Sospesa</button>
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex gap-2">
+                        {isGodMode && (
+                            <button onClick={() => handleExcelExportJobs(sortedJobStats)} className="flex items-center gap-2 text-green-600 bg-green-50 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-100 border border-green-200 transition">
+                                <FileSpreadsheet size={16}/> Esporta Excel
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200">
                         <thead className="bg-slate-50">
-                            <tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Commessa</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Stato</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Avanzamento</th></tr>
+                            <tr>
+                                <th className="px-6 py-3 w-10">
+                                    <input 
+                                        type="checkbox" 
+                                        className="rounded border-slate-300"
+                                        onChange={(e) => {
+                                            if(e.target.checked) setSelectedJobIds(new Set(sortedJobStats.map(j => j.id)));
+                                            else setSelectedJobIds(new Set());
+                                        }}
+                                        checked={selectedJobIds.size === sortedJobStats.length && sortedJobStats.length > 0}
+                                    />
+                                </th>
+                                <th onClick={() => requestSort('code', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Commessa {renderSortArrow('code', jobSort)}</th>
+                                <th onClick={() => requestSort('clientName', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Cliente {renderSortArrow('clientName', jobSort)}</th>
+                                <th onClick={() => requestSort('totalHoursUsed', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Ore {renderSortArrow('totalHoursUsed', jobSort)}</th>
+                                <th onClick={() => requestSort('profitMargin', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Margine {renderSortArrow('profitMargin', jobSort)}</th>
+                                <th onClick={() => requestSort('deadline', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Scadenza {renderSortArrow('deadline', jobSort)}</th>
+                                <th onClick={() => requestSort('status', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Stato {renderSortArrow('status', jobSort)}</th>
+                                <th className="px-6 py-3"></th>
+                            </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-slate-200">
-                             {sortedJobStats.map((job) => (
-                                <tr key={job.id} onClick={() => setSelectedJobForAnalysis(job.id)} className="cursor-pointer hover:bg-slate-50">
+                            {sortedJobStats.map((job) => (
+                                <tr key={job.id} className={`hover:bg-slate-50 ${selectedJobIds.has(job.id) ? 'bg-blue-50' : ''}`}>
                                     <td className="px-6 py-4">
-                                        <div className="font-bold text-slate-800">{job.code}</div>
-                                        <div className="text-xs text-slate-500">{job.clientName}</div>
+                                        <input 
+                                            type="checkbox" 
+                                            className="rounded border-slate-300"
+                                            checked={selectedJobIds.has(job.id)}
+                                            onChange={(e) => {
+                                                const newSet = new Set(selectedJobIds);
+                                                if (e.target.checked) newSet.add(job.id);
+                                                else newSet.delete(job.id);
+                                                setSelectedJobIds(newSet);
+                                            }}
+                                        />
                                     </td>
-                                    <td className="px-6 py-4"><span className="bg-slate-100 text-slate-800 text-xs font-bold px-2 py-1 rounded">{job.status}</span></td>
-                                    <td className="px-6 py-4 text-sm text-slate-600">{job.totalHoursUsed.toFixed(1)} / {job.budgetHours} h</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 cursor-pointer" onClick={() => setSelectedJobForAnalysis(job.id)}>{job.code}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{job.clientName}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-24 bg-slate-200 rounded-full h-2.5">
+                                                <div 
+                                                    className={`h-2.5 rounded-full ${job.isOverBudget ? 'bg-red-500' : 'bg-blue-500'}`} 
+                                                    style={{ width: `${Math.min((job.totalHoursUsed / job.budgetHours) * 100, 100)}%` }}
+                                                ></div>
+                                            </div>
+                                            <span>{job.totalHoursUsed.toFixed(1)}/{job.budgetHours}</span>
+                                        </div>
+                                    </td>
+                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${job.profitMargin < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                        € {job.profitMargin.toLocaleString()}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                                        {job.deadline ? new Date(job.deadline).toLocaleDateString('it-IT') : '-'}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                            ${job.status === JobStatus.IN_PROGRESS ? 'bg-green-100 text-green-800' : 
+                                            job.status === JobStatus.PLANNED ? 'bg-blue-100 text-blue-800' : 
+                                            job.status === JobStatus.COMPLETED ? 'bg-slate-800 text-white' :
+                                            'bg-slate-100 text-slate-800'}`}>
+                                            {job.status}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <Info size={16} className="text-slate-400 hover:text-blue-500 cursor-pointer" onClick={() => setSelectedJobForAnalysis(job.id)} />
+                                    </td>
                                 </tr>
-                             ))}
+                            ))}
                         </tbody>
-                     </table>
-                 </div>
-                 {/* Detail Modal Re-use */}
-                 {selectedJobForAnalysis && (
+                    </table>
+                </div>
+
+                {/* JOB DETAILS MODAL */}
+                {selectedJobForAnalysis && (
                      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                         <div className="bg-white p-6 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-auto">
-                            <div className="flex justify-between mb-4">
-                                <h3 className="font-bold text-xl">Dettaglio {jobs.find(j=>j.id===selectedJobForAnalysis)?.code}</h3>
-                                <button onClick={() => setSelectedJobForAnalysis(null)}><X /></button>
+                        <div className="bg-white rounded-xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl">
+                             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
+                                <div>
+                                    <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                                        <Briefcase className="text-blue-600" />
+                                        Dettaglio Commessa: {jobs.find(j => j.id === selectedJobForAnalysis)?.code}
+                                    </h3>
+                                    <p className="text-slate-500">{jobs.find(j => j.id === selectedJobForAnalysis)?.clientName} - {jobs.find(j => j.id === selectedJobForAnalysis)?.description}</p>
+                                </div>
+                                <button onClick={() => setSelectedJobForAnalysis(null)} className="p-2 hover:bg-slate-200 rounded-full transition">
+                                    <X size={24} className="text-slate-500"/>
+                                </button>
                             </div>
-                            {/* Re-implementing quick log view for context */}
-                            <div className="space-y-2">
-                                {logs.filter(l => l.jobId === selectedJobForAnalysis).map(log => (
-                                    <div key={log.id} className="flex justify-between text-sm border-b py-2">
-                                        <span>{new Date(log.date).toLocaleDateString()} - {employees.find(e=>e.id===log.employeeId)?.name}</span>
-                                        <span className="font-bold">{log.hours} h ({log.phase})</span>
+                            <div className="p-6 overflow-y-auto space-y-8">
+                                {/* Operator Summary */}
+                                <div>
+                                    <h4 className="text-lg font-semibold mb-3 text-slate-700">Riepilogo per Operatore</h4>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        {Object.entries(
+                                            logs.filter(l => l.jobId === selectedJobForAnalysis)
+                                            .reduce((acc, log) => {
+                                                const empName = employees.find(e => e.id === log.employeeId)?.name || 'Sconosciuto';
+                                                acc[empName] = (acc[empName] || 0) + log.hours;
+                                                return acc;
+                                            }, {} as {[key:string]: number})
+                                        ).map(([name, hours]) => (
+                                            <div key={name} className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                                                <div className="text-sm text-slate-500 font-medium">Operatore</div>
+                                                <div className="font-bold text-slate-800 truncate">{name}</div>
+                                                <div className="text-2xl font-bold text-blue-600 mt-1">{(hours as number).toFixed(1)} <span className="text-sm font-normal text-slate-500">h</span></div>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
+                                </div>
+                                {/* Detailed Logs Table with Phase Editing */}
+                                <div>
+                                    <h4 className="text-lg font-semibold mb-3 text-slate-700">Cronologia Lavori</h4>
+                                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
+                                                <tr><th className="px-4 py-3">Data</th><th className="px-4 py-3">Operatore</th><th className="px-4 py-3">Fase</th><th className="px-4 py-3">Ore</th><th className="px-4 py-3">Note</th></tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {logs.filter(l => l.jobId === selectedJobForAnalysis).sort((a,b)=>new Date(b.date).getTime()-new Date(a.date).getTime()).map(log => (
+                                                    <tr key={log.id} className="hover:bg-slate-50 group">
+                                                        <td className="px-4 py-3 text-slate-600">{new Date(log.date).toLocaleDateString()}</td>
+                                                        <td className="px-4 py-3 font-medium">{employees.find(e => e.id === log.employeeId)?.name}</td>
+                                                        <td className="px-4 py-3">
+                                                            {editingLogId === log.id ? (
+                                                                <select autoFocus value={tempPhase} onChange={(e) => setTempPhase(e.target.value)} onBlur={() => handleUpdatePhase(log)} className="border rounded p-1 text-xs">
+                                                                    {['Generica (Import)', ...settings.workPhases].map(p => <option key={p} value={p}>{p}</option>)}
+                                                                </select>
+                                                            ) : (
+                                                                <button onClick={() => { setEditingLogId(log.id); setTempPhase(log.phase); }} className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs border border-blue-100 hover:bg-blue-100 flex items-center gap-1">{log.phase} <Edit2 size={10} className="opacity-0 group-hover:opacity-50"/></button>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3 font-bold">{log.hours}</td>
+                                                        <td className="px-4 py-3 text-slate-500 italic truncate max-w-xs">{log.notes}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
-                         </div>
+                             <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-xl flex justify-end">
+                                <button onClick={() => setSelectedJobForAnalysis(null)} className="bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-slate-700 transition">Chiudi Dettaglio</button>
+                            </div>
+                        </div>
                      </div>
-                 )}
-             </div>
+                )}
+            </div>
         )}
 
         {/* HR & PAGHE SECTION - COMPLETELY REDESIGNED */}
