@@ -152,7 +152,8 @@ class DatabaseService {
   }
 
   async saveWorkLog(log: WorkLog): Promise<void> {
-    await setDoc(doc(db, 'logs', log.id), log);
+    const cleanLog = JSON.parse(JSON.stringify(log)); // Sanitize undefined
+    await setDoc(doc(db, 'logs', log.id), cleanLog);
   }
 
   async deleteWorkLog(logId: string): Promise<void> {
@@ -160,25 +161,29 @@ class DatabaseService {
   }
 
   async saveAttendance(record: AttendanceRecord): Promise<void> {
-    await setDoc(doc(db, 'attendance', record.id), record);
+    const cleanRecord = JSON.parse(JSON.stringify(record));
+    await setDoc(doc(db, 'attendance', record.id), cleanRecord);
   }
 
   async saveJob(job: Job): Promise<void> {
-    await setDoc(doc(db, 'jobs', job.id), job);
+    const cleanJob = JSON.parse(JSON.stringify(job));
+    await setDoc(doc(db, 'jobs', job.id), cleanJob);
   }
 
   async saveEmployee(employee: Employee): Promise<void> {
-    await setDoc(doc(db, 'employees', employee.id), employee);
+    const cleanEmp = JSON.parse(JSON.stringify(employee));
+    await setDoc(doc(db, 'employees', employee.id), cleanEmp);
   }
 
   async saveJustification(justification: DayJustification): Promise<void> {
-    await setDoc(doc(db, 'justifications', justification.id), justification);
+    const cleanJust = JSON.parse(JSON.stringify(justification));
+    await setDoc(doc(db, 'justifications', justification.id), cleanJust);
   }
 
   async saveAiPrompts(prompts: AIQuickPrompt[]): Promise<void> {
       const batch = writeBatch(db);
       prompts.forEach(p => {
-          batch.set(doc(db, 'customPrompts', p.id), p);
+          batch.set(doc(db, 'customPrompts', p.id), JSON.parse(JSON.stringify(p)));
       });
       await batch.commit();
   }
@@ -192,27 +197,42 @@ class DatabaseService {
   }
 
   async bulkImport(newJobs: Job[], newLogs: WorkLog[], newEmployees: Employee[]): Promise<void> {
-      const batch = writeBatch(db);
+      // 1. Sanitize Data (remove undefined) by using JSON cycle or manual cleanup
+      const sanitize = (obj: any) => {
+          const newObj = { ...obj };
+          Object.keys(newObj).forEach(key => {
+              if (newObj[key] === undefined) delete newObj[key];
+          });
+          return newObj;
+      };
+
+      // 2. Prepare Operations
+      const allOperations = [
+          ...newEmployees.map(e => ({ type: 'employee', ref: doc(db, 'employees', e.id), data: sanitize(e) })),
+          ...newJobs.map(j => ({ type: 'job', ref: doc(db, 'jobs', j.id), data: sanitize(j) })),
+          ...newLogs.map(l => ({ type: 'log', ref: doc(db, 'logs', l.id), data: sanitize(l) }))
+      ];
+
+      // 3. Batching (Firestore limit 500 operations per batch)
+      const BATCH_SIZE = 450; // Safety margin
       
-      newEmployees.forEach(emp => {
-          batch.set(doc(db, 'employees', emp.id), emp);
-      });
+      console.log(`Starting Bulk Import: ${allOperations.length} operations`);
 
-      newJobs.forEach(job => {
-          batch.set(doc(db, 'jobs', job.id), job);
-      });
+      for (let i = 0; i < allOperations.length; i += BATCH_SIZE) {
+          const batch = writeBatch(db);
+          const chunk = allOperations.slice(i, i + BATCH_SIZE);
+          
+          chunk.forEach(op => {
+              batch.set(op.ref, op.data);
+          });
 
-      newLogs.forEach(log => {
-          batch.set(doc(db, 'logs', log.id), log);
-      });
-
-      try {
-          await batch.commit();
-      } catch (e) {
-          console.error("Batch commit failed, trying fallback loop", e);
-          for (const emp of newEmployees) await this.saveEmployee(emp);
-          for (const job of newJobs) await this.saveJob(job);
-          for (const log of newLogs) await this.saveWorkLog(log);
+          try {
+              console.log(`Committing batch chunk ${i / BATCH_SIZE + 1}...`);
+              await batch.commit();
+          } catch (e) {
+              console.error("Batch commit failed:", e);
+              throw e; // Propagate error to UI
+          }
       }
   }
 
@@ -222,17 +242,17 @@ class DatabaseService {
           const jobsSnap = await getDocs(collection(db, 'jobs'));
           const logsSnap = await getDocs(collection(db, 'logs'));
           
-          const batch = writeBatch(db);
-          
-          jobsSnap.docs.forEach((d) => {
-              batch.delete(d.ref);
-          });
-          
-          logsSnap.docs.forEach((d) => {
-              batch.delete(d.ref);
-          });
+          // Must verify batch limits for delete as well
+          const allDocs = [...jobsSnap.docs, ...logsSnap.docs];
+          const BATCH_SIZE = 450;
 
-          await batch.commit();
+          for (let i = 0; i < allDocs.length; i += BATCH_SIZE) {
+              const batch = writeBatch(db);
+              const chunk = allDocs.slice(i, i + BATCH_SIZE);
+              chunk.forEach(d => batch.delete(d.ref));
+              await batch.commit();
+          }
+
       } catch (e) {
           console.error("Errore reset dati:", e);
           throw e;
