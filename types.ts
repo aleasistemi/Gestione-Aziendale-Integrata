@@ -25,6 +25,7 @@ export interface Employee {
   workDays: number[]; // 0=Sun, 1=Mon, etc. Default [1,2,3,4,5]
   // Auth
   nfcCode?: string;
+  nfcCode2?: string; // Secondo badge opzionale
   pin?: string;
 }
 
@@ -98,6 +99,8 @@ export interface GlobalSettings {
   nfcEnabled: boolean;
   workPhases: string[]; // Dynamic list of work phases
   geminiApiKey?: string; // Custom API Key
+  overtimeSnapMinutes?: number; // Default 30
+  permessoSnapMinutes?: number; // Default 15
 }
 
 export type ViewMode = 'LOGIN' | 'ATTENDANCE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';

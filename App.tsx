@@ -97,7 +97,11 @@ function App() {
   const processLoginScan = (code: string) => {
       if (code.length < 2) return;
       const cleanCode = code.trim().toUpperCase();
-      const emp = employees.find(e => e.nfcCode?.trim().toUpperCase() === cleanCode);
+      
+      const emp = employees.find(e => 
+          (e.nfcCode && e.nfcCode.trim().toUpperCase() === cleanCode) ||
+          (e.nfcCode2 && e.nfcCode2.trim().toUpperCase() === cleanCode)
+      );
       
       if (emp) {
           handleLogin(emp);
