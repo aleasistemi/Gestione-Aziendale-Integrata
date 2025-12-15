@@ -24,13 +24,15 @@ interface Props {
   currentUserRole: Role;
   settings: GlobalSettings;
   onSaveSettings: (settings: GlobalSettings) => void;
+  onSaveAttendance: (record: AttendanceRecord) => void;
+  onDeleteAttendance: (recordId: string) => void;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#EC1D25'];
 
 type SortConfig = { key: string; direction: 'asc' | 'desc' } | null;
 
-const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, justifications = [], customPrompts = [], permissions = {}, onSaveJob, onSaveEmployee, onSaveJustification, onSaveAiPrompts, onSavePermissions, onUpdateLog, currentUserRole, settings, onSaveSettings }) => {
+const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, justifications = [], customPrompts = [], permissions = {}, onSaveJob, onSaveEmployee, onSaveJustification, onSaveAiPrompts, onSavePermissions, onUpdateLog, currentUserRole, settings, onSaveSettings, onSaveAttendance, onDeleteAttendance }) => {
   
   // Permissions Logic
   const isGodMode = currentUserRole === Role.SYSTEM_ADMIN || currentUserRole === Role.DIRECTION;
@@ -562,7 +564,8 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
         isLate: false, isAnomaly: false, isAbsent: false, 
         firstIn: null, lastOut: null, 
         lunchOut: null, lunchIn: null,
-        records: [], justification: null 
+        records: [], justification: null,
+        firstInId: null, lunchOutId: null, lunchInId: null, lastOutId: null
     };
 
     const dateObj = new Date(dateStr);
@@ -580,13 +583,21 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     // 2. Identify Key Timestamps (Entrata 1, Uscita 1, Entrata 2, Uscita 2)
-    let firstIn = null;
-    let lunchOut = null;
-    let lunchIn = null;
-    let lastOut = null;
+    let firstIn: string | null = null;
+    let firstInId: string | null = null;
+    
+    let lunchOut: string | null = null;
+    let lunchOutId: string | null = null;
+    
+    let lunchIn: string | null = null;
+    let lunchInId: string | null = null;
+    
+    let lastOut: string | null = null;
+    let lastOutId: string | null = null;
 
     if (dayAttendance.length > 0 && dayAttendance[0].type === 'ENTRATA') {
         firstIn = new Date(dayAttendance[0].timestamp).toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        firstInId = dayAttendance[0].id;
     }
     
     // Attempt to identify lunch break if there are 4 records
@@ -594,15 +605,19 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
          // Could be lunch out or final exit if only half day
          if (dayAttendance.length >= 3) {
              lunchOut = new Date(dayAttendance[1].timestamp).toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+             lunchOutId = dayAttendance[1].id;
          } else {
              lastOut = new Date(dayAttendance[1].timestamp).toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+             lastOutId = dayAttendance[1].id;
          }
     }
     if (dayAttendance.length >= 3 && dayAttendance[2].type === 'ENTRATA') {
         lunchIn = new Date(dayAttendance[2].timestamp).toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        lunchInId = dayAttendance[2].id;
     }
     if (dayAttendance.length >= 4 && dayAttendance[3].type === 'USCITA') {
         lastOut = new Date(dayAttendance[3].timestamp).toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        lastOutId = dayAttendance[3].id;
     }
 
     // 3. Calculate Worked Hours
@@ -660,6 +675,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
         standardHours, overtime, 
         isLate, isAnomaly, isAbsent,
         firstIn, lunchOut, lunchIn, lastOut,
+        firstInId, lunchOutId, lunchInId, lastOutId,
         records: dayAttendance, justification 
     };
   };
@@ -771,6 +787,27 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       };
       onSaveJustification(newJust);
   };
+
+  const handleTimeChange = (
+      empId: string, 
+      dateStr: string, 
+      newTime: string, 
+      existingId: string | null, 
+      type: 'ENTRATA' | 'USCITA'
+  ) => {
+      if (!newTime) {
+          if (existingId) onDeleteAttendance(existingId);
+          return;
+      }
+      
+      const record: AttendanceRecord = {
+          id: existingId || Date.now().toString() + Math.random().toString().slice(2,5),
+          employeeId: empId,
+          type: type,
+          timestamp: `${dateStr}T${newTime}:00`
+      };
+      onSaveAttendance(record);
+  }
 
   const handleSaveJobForm = () => {
     if (!isEditingJob?.code) return;
@@ -1396,10 +1433,38 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                                                         <div className="font-bold">{String(day).padStart(2,'0')}</div>
                                                         <div className="text-xs uppercase">{dateObj.toLocaleDateString('it-IT', {weekday:'short'})}</div>
                                                     </td>
-                                                    <td className={`p-2 border border-slate-200 text-center ${stats.isLate ? 'text-orange-600 font-bold' : ''}`}>{stats.firstIn || '-'}</td>
-                                                    <td className="p-2 border border-slate-200 text-center">{stats.lunchOut || '-'}</td>
-                                                    <td className="p-2 border border-slate-200 text-center">{stats.lunchIn || '-'}</td>
-                                                    <td className="p-2 border border-slate-200 text-center">{stats.lastOut || '-'}</td>
+                                                    <td className={`p-1 border border-slate-200 text-center ${stats.isLate ? 'text-orange-600 font-bold' : ''}`}>
+                                                        <input 
+                                                            type="time" 
+                                                            className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs"
+                                                            value={stats.firstIn || ''}
+                                                            onChange={(e) => handleTimeChange(selectedEmpForDetail, dateStr, e.target.value, stats.firstInId, 'ENTRATA')}
+                                                        />
+                                                    </td>
+                                                    <td className="p-1 border border-slate-200 text-center">
+                                                        <input 
+                                                            type="time" 
+                                                            className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs"
+                                                            value={stats.lunchOut || ''}
+                                                            onChange={(e) => handleTimeChange(selectedEmpForDetail, dateStr, e.target.value, stats.lunchOutId, 'USCITA')}
+                                                        />
+                                                    </td>
+                                                    <td className="p-1 border border-slate-200 text-center">
+                                                        <input 
+                                                            type="time" 
+                                                            className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs"
+                                                            value={stats.lunchIn || ''}
+                                                            onChange={(e) => handleTimeChange(selectedEmpForDetail, dateStr, e.target.value, stats.lunchInId, 'ENTRATA')}
+                                                        />
+                                                    </td>
+                                                    <td className="p-1 border border-slate-200 text-center">
+                                                        <input 
+                                                            type="time" 
+                                                            className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs"
+                                                            value={stats.lastOut || ''}
+                                                            onChange={(e) => handleTimeChange(selectedEmpForDetail, dateStr, e.target.value, stats.lastOutId, 'USCITA')}
+                                                        />
+                                                    </td>
                                                     <td className="p-2 border border-slate-200 text-center font-bold">{stats.standardHours > 0 ? stats.standardHours.toFixed(2) : '-'}</td>
                                                     <td className="p-2 border border-slate-200 text-center text-orange-600 font-bold">{stats.overtime > 0 ? stats.overtime.toFixed(2) : ''}</td>
                                                     <td className="p-2 border border-slate-200 text-center">
