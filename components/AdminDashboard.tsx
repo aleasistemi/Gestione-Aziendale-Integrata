@@ -310,13 +310,20 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
           const ws = wb.Sheets[wsname];
           const data = utils.sheet_to_json(ws, { header: 1 }); // Array of arrays
 
+          // Data collectors
+          const jobsBatchMap = new Map<string, Job>();
+          const empsBatchMap = new Map<string, Employee>();
+          const logsBatchList: WorkLog[] = [];
+          
+          const codeToIdMap = new Map<string, string>(); // Maps "JOB-CODE" to "firebase-id"
+
           let jobsCreated = 0;
           let jobsUpdated = 0;
           let logsCreated = 0;
-          let currentJob: Partial<Job> | null = null;
+          
           let lastJobId: string | null = null;
 
-          // Find header row (row starting with "Riferimento")
+          // Find header row
           let headerIndex = -1;
           for(let i=0; i<Math.min(data.length, 20); i++) {
               const row = data[i] as any[];
@@ -331,7 +338,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
               return;
           }
 
-          // Dynamic column mapping based on header row
           const headerRow = data[headerIndex] as string[];
           const colMap: {[key:string]: number} = {};
           headerRow.forEach((cell, idx) => {
@@ -345,7 +351,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
           const formatDate = (val: any) => {
               if(!val) return '';
-              // Handle "DD.MM.YY" format string
               if (typeof val === 'string' && val.includes('.')) {
                   const parts = val.split('.');
                   if (parts.length === 3) {
@@ -365,53 +370,74 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
               const code = getCol(row, 'Riferimento');
               const operatorRaw = getCol(row, 'Operatore');
               
-              // Only process rows with an operator (detail rows)
-              if (!operatorRaw) continue;
+              if (!operatorRaw) continue; // Detail row must have operator
 
-              // Check if we need to create/find the job first
+              // --- JOB HANDLING ---
               if (code) {
-                  const cleanCode = String(code);
-                  // Check if job exists in DB
-                  let job = jobs.find(j => j.code === cleanCode);
+                  const cleanCode = String(code).trim();
                   
+                  // 1. Try to find job in existing DB
+                  let existingJob = jobs.find(j => j.code === cleanCode);
+                  // 2. Or try to find in current batch map
+                  if (!existingJob) {
+                      // Check if we already created it in this loop pass
+                      // We need to iterate map values to find by code? Or just use codeToIdMap
+                      const batchId = codeToIdMap.get(cleanCode);
+                      if (batchId) existingJob = jobsBatchMap.get(batchId);
+                  }
+
+                  let jobId: string;
+
+                  if (existingJob) {
+                      jobId = existingJob.id;
+                      // Update mode
+                      if (!jobsBatchMap.has(jobId)) { // Count update only once per batch
+                          jobsUpdated++;
+                      }
+                  } else {
+                      // New Job
+                      jobId = Date.now().toString() + Math.random().toString().slice(2,5);
+                      codeToIdMap.set(cleanCode, jobId);
+                      jobsCreated++;
+                  }
+
                   const jobData: Job = {
-                      id: job ? job.id : (Date.now().toString() + Math.random()),
+                      id: jobId,
                       code: cleanCode,
                       clientName: String(getCol(row, 'Cliente') || 'Sconosciuto'),
                       description: String(getCol(row, 'Descrizione') || ''),
-                      status: job ? job.status : JobStatus.IN_PROGRESS, // Mantieni stato se esiste
+                      status: existingJob ? existingJob.status : JobStatus.IN_PROGRESS,
                       budgetHours: Number(getCol(row, 'Monte Ore') || 0),
                       budgetValue: Number(getCol(row, 'Valore') || 0),
                       deadline: formatDate(getCol(row, 'Data Consegna')),
-                      priority: job ? (job.priority || 3) : 3,
-                      suggestedOperatorId: job?.suggestedOperatorId
+                      priority: existingJob ? (existingJob.priority || 3) : 3,
+                      suggestedOperatorId: existingJob?.suggestedOperatorId
                   };
-
-                  if (!job && currentJob?.code !== cleanCode) {
-                      // New Job
-                      onSaveJob(jobData);
-                      jobsCreated++;
-                      currentJob = jobData;
-                      lastJobId = jobData.id;
-                  } else if (job) {
-                      // Update Existing Job (Overwrite)
-                      onSaveJob(jobData); // Updates properties like Budget/Client/Description
-                      if (lastJobId !== job.id) {
-                          jobsUpdated++;
-                      }
-                      lastJobId = job.id;
-                      currentJob = jobData;
-                  }
+                  
+                  // Store in batch map (overwrites if already processed in this loop, ensuring latest data)
+                  jobsBatchMap.set(jobId, jobData);
+                  lastJobId = jobId;
               }
 
+              // --- LOG HANDLING ---
               if (lastJobId && operatorRaw) {
                   const operatorName = String(operatorRaw).trim();
                   // Fuzzy match employee
                   let emp = employees.find(e => e.name.toLowerCase().includes(operatorName.toLowerCase()));
                   
+                  // If not in DB, check current batch
                   if (!emp) {
-                      // Create generic import employee if not found
-                      const newEmpId = 'imp-' + Date.now() + Math.random();
+                      for (const batchEmp of empsBatchMap.values()) {
+                          if (batchEmp.name.toLowerCase() === operatorName.toLowerCase()) {
+                              emp = batchEmp;
+                              break;
+                          }
+                      }
+                  }
+
+                  if (!emp) {
+                      // Create generic import employee
+                      const newEmpId = 'imp-' + Date.now() + Math.random().toString().slice(2,5);
                       emp = {
                           id: newEmpId,
                           name: operatorName,
@@ -425,14 +451,13 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                           scheduleEndAfternoon: "17:30",
                           workDays: [1,2,3,4,5]
                       };
-                      onSaveEmployee(emp);
+                      empsBatchMap.set(newEmpId, emp);
                   }
 
-                  // Create Log
                   const hoursRaw = getCol(row, 'Ore');
                   let hours = 0;
                   if (typeof hoursRaw === 'number') {
-                      hours = hoursRaw * 24; // Excel time fraction
+                      hours = hoursRaw * 24;
                   } else if (typeof hoursRaw === 'string' && hoursRaw.includes(':')) {
                       const [h, m] = hoursRaw.split(':').map(Number);
                       hours = h + (m/60);
@@ -440,11 +465,14 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
                   if (hours > 0) {
                        const logDate = formatDate(getCol(row, 'Data Inizio')) || new Date().toISOString().split('T')[0];
-                       // Deterministic ID to avoid dupes
                        const logId = `log-${lastJobId}-${emp.id}-${logDate}-${hours.toFixed(2)}`;
                        
-                       // Check if log exists locally (in current state)
-                       if (!logs.some(l => l.id === logId)) {
+                       // Avoid duplicates in DB check
+                       const existsInDb = logs.some(l => l.id === logId);
+                       // Avoid duplicates in Batch check
+                       const existsInBatch = logsBatchList.some(l => l.id === logId);
+
+                       if (!existsInDb && !existsInBatch) {
                            const newLog: WorkLog = {
                                id: logId,
                                jobId: lastJobId,
@@ -454,14 +482,31 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                                phase: 'Generica (Import)',
                                notes: 'Importato da Excel'
                            };
-                           onUpdateLog(newLog); // Using onUpdateLog as it acts as save
+                           logsBatchList.push(newLog);
                            logsCreated++;
                        }
                   }
               }
           }
-          alert(`Importazione Completata!\nNuove Commesse: ${jobsCreated}\nCommesse Aggiornate: ${jobsUpdated}\nRegistrazioni Ore: ${logsCreated}`);
-          window.location.reload();
+
+          // --- BULK COMMIT ---
+          if (jobsBatchMap.size > 0 || logsBatchList.length > 0) {
+              try {
+                  // Use dbService bulk import
+                  await dbService.bulkImport(
+                      Array.from(jobsBatchMap.values()),
+                      logsBatchList,
+                      Array.from(empsBatchMap.values())
+                  );
+                  alert(`Importazione Completata con Successo!\n\nNuove Commesse: ${jobsCreated}\nCommesse Aggiornate: ${jobsUpdated}\nRegistrazioni Ore: ${logsCreated}\n\nLa pagina verrà ricaricata.`);
+                  window.location.reload();
+              } catch (e) {
+                  console.error("Bulk Import Error", e);
+                  alert("Errore durante il salvataggio dei dati. Controlla la console.");
+              }
+          } else {
+              alert("Nessun dato valido trovato da importare.");
+          }
       };
       reader.readAsBinaryString(file);
   };
@@ -1064,110 +1109,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                         </div>
                      </div>
                 )}
-            </div>
-        )}
-
-        {activeTab === 'HR' && (
-             <div className="space-y-6">
-                <div className="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                    <Calendar className="text-blue-600"/>
-                    <label className="text-sm font-medium text-slate-700">Seleziona Mese:</label>
-                    <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border border-slate-300 rounded px-2 py-1"/>
-                </div>
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                     <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                         <h3 className="font-bold text-slate-700">Riepilogo Mensile Presenze</h3>
-                         <button onClick={handleExportConsultant} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm transition"><FileSpreadsheet size={16}/> Esporta Report Consulente</button>
-                    </div>
-                    <table className="min-w-full divide-y divide-slate-200">
-                        <thead className="bg-slate-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Dipendente</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Gg Lav.</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ore Lav.</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ritardi</th><th className="px-6 py-3"></th></tr></thead>
-                        <tbody className="bg-white divide-y divide-slate-200">
-                            {payrollStats.map(stat => (
-                                <tr key={stat.id} className="hover:bg-slate-50">
-                                    <td className="px-6 py-4 font-medium text-slate-900">{stat.name}</td>
-                                    <td className="px-6 py-4 text-slate-500">{stat.daysWorked}</td>
-                                    <td className="px-6 py-4 text-slate-500">{stat.workedHours.toFixed(2)}</td>
-                                    <td className="px-6 py-4">{stat.lateCount > 0 ? <span className="flex items-center gap-1 text-red-600 font-bold bg-red-50 px-2 py-1 rounded w-fit"><AlertCircle size={14}/> {stat.lateCount}</span> : <span className="text-green-600">0</span>}</td>
-                                    <td className="px-6 py-4"><button onClick={() => setSelectedEmpForDetail(stat.id)} className="text-blue-600 hover:text-blue-800 underline">Gestisci</button></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-                {selectedEmpForDetail && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-white p-6 rounded-xl w-full max-w-4xl max-h-[85vh] overflow-y-auto">
-                            <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">Gestione Presenze</h3><button onClick={() => setSelectedEmpForDetail(null)}><X size={24} className="text-slate-400"/></button></div>
-                            <div className="space-y-2">
-                                {Array.from({length: new Date(parseInt(selectedMonth.split('-')[0]), parseInt(selectedMonth.split('-')[1]), 0).getDate()}, (_, i) => i + 1).map(day => {
-                                    const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
-                                    const stats = calculateDailyStats(selectedEmpForDetail, dateStr);
-                                    const dateObj = new Date(dateStr);
-                                    const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-                                    
-                                    // Skip day if empty, exempt, and weekend (unless specifically working)
-                                    if(stats.hours === 0 && !stats.justification && isWeekend) return null;
-                                    
-                                    return (
-                                        <div key={day} className={`flex justify-between items-center p-3 rounded border ${stats.isLate || stats.isAnomaly ? 'bg-red-50 border-red-200' : 'bg-white border-slate-100'}`}>
-                                            <div className="w-32">
-                                                <div className="font-mono font-bold text-slate-700">{dateStr}</div>
-                                                <div className="text-xs text-slate-400">{dateObj.toLocaleDateString('it-IT', {weekday:'long'})}</div>
-                                            </div>
-                                            <div className="flex-1 px-4 text-sm text-slate-600">
-                                                {stats.isLate && <span className="text-red-600 font-bold text-xs flex items-center gap-1"><AlertTriangle size={12}/> RITARDO (Ingresso: {stats.firstIn})</span>}
-                                                {stats.isAnomaly && <span className="text-red-600 font-bold text-xs flex items-center gap-1 ml-2"><AlertCircle size={12}/> ANOMALIA TIMBRATURE</span>}
-                                            </div>
-                                            <div className="text-sm mr-4">{stats.justification ? <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-bold">{stats.justification.type}</span> : (stats.hours > 0 ? `${stats.hours.toFixed(2)}h` : '-')}</div>
-                                            <select className="text-xs border rounded p-1" value={stats.justification?.type || ''} onChange={(e) => {if(e.target.value) setJustificationForDay(selectedEmpForDetail, dateStr, e.target.value as JustificationType)}}>
-                                                <option value="">Azioni...</option><option value={JustificationType.FERIE}>Ferie</option><option value={JustificationType.MALATTIA}>Malattia</option><option value={JustificationType.PERMESSO}>Permesso</option>
-                                            </select>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        </div>
-                    </div>
-                )}
-             </div>
-        )}
-
-        {/* AI Section (Simplified for brevity) */}
-        {activeTab === 'AI' && (
-             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                 {/* AI Tab content mostly unchanged */}
-                 <div className="flex items-center gap-3 mb-6">
-                    <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-2 rounded-lg"><TrendingUp size={24} /></div>
-                    <div><h2 className="text-xl font-bold text-slate-800">Analista Aziendale IA</h2></div>
-                </div>
-                {/* ... Prompt Grid & Input ... */}
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-                    {customPrompts.map((prompt) => (
-                        <div key={prompt.id} className="relative group">
-                            {editingPromptId === prompt.id ? (
-                                <div className="p-3 bg-white border-2 border-blue-500 rounded-lg shadow-lg z-10 absolute top-0 left-0 w-full min-w-[200px]">
-                                    <input type="text" className="w-full text-xs font-bold mb-2 border-b outline-none" value={tempPromptLabel} onChange={(e) => setTempPromptLabel(e.target.value)} placeholder="Etichetta"/>
-                                    <textarea className="w-full text-xs p-1 border rounded resize-none outline-none mb-2" rows={3} value={tempPromptText} onChange={(e) => setTempPromptText(e.target.value)} placeholder="Domanda per IA..."/>
-                                    <div className="flex justify-end gap-1"><button onClick={() => setEditingPromptId(null)} className="p-1 hover:bg-slate-100 rounded text-slate-500"><X size={14}/></button><button onClick={() => handleSavePrompt(prompt.id)} className="p-1 hover:bg-green-100 text-green-600 rounded"><Save size={14}/></button></div>
-                                </div>
-                            ) : (
-                                <button onClick={() => handleAskAI(prompt.prompt)} className="w-full p-3 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 border border-slate-200 rounded-lg text-left transition relative h-full flex flex-col justify-between group-hover:shadow-md">
-                                    <span className="text-sm font-semibold text-slate-700 block mb-1">{prompt.label}</span>
-                                    <span className="text-xs text-slate-400 line-clamp-2">{prompt.prompt}</span>
-                                    <div onClick={(e) => { e.stopPropagation(); setEditingPromptId(prompt.id); setTempPromptLabel(prompt.label); setTempPromptText(prompt.prompt); }} className="absolute top-2 right-2 p-1 text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition"><Pencil size={12} /></div>
-                                </button>
-                            )}
-                        </div>
-                    ))}
-                </div>
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 min-h-[200px] mb-4 shadow-inner">
-                    {aiResponse ? <div className="prose prose-sm max-w-none text-slate-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }} /> : <div className="text-center text-slate-400 py-16 flex flex-col items-center gap-3">{isLoadingAi ? <Loader2 className="animate-spin text-blue-500" size={32}/> : <span>Seleziona una domanda rapida o scrivi la tua richiesta qui sotto.</span>}</div>}
-                </div>
-                <div className="flex gap-2 relative">
-                    <input type="text" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="Fai una domanda libera..." className="flex-1 border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none pl-12 shadow-sm"/>
-                    <div className="absolute left-4 top-3.5 text-slate-400"><Info size={20}/></div>
-                    <button onClick={() => handleAskAI()} disabled={!aiPrompt || isLoadingAi} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 shadow-sm">{isLoadingAi ? 'Attendere...' : 'Analizza'}</button>
-                </div>
             </div>
         )}
 
