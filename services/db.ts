@@ -45,6 +45,8 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
 const DEFAULT_SETTINGS: GlobalSettings = {
   nfcEnabled: false,
   geminiApiKey: '',
+  overtimeSnapMinutes: 30,
+  permessoSnapMinutes: 15,
   workPhases: [
     'Preventivo', 
     'Ordine', 
@@ -130,6 +132,10 @@ class DatabaseService {
         if (!settings.workPhases || settings.workPhases.length === 0) {
             settings.workPhases = DEFAULT_SETTINGS.workPhases;
         }
+        
+        // Ensure overtime/permesso snap exist
+        if (settings.overtimeSnapMinutes === undefined) settings.overtimeSnapMinutes = 30;
+        if (settings.permessoSnapMinutes === undefined) settings.permessoSnapMinutes = 15;
 
         // Fallback per prompts se vuoti (caso raro)
         const finalPrompts = customPrompts.length > 0 ? customPrompts : DEFAULT_AI_PROMPTS;
