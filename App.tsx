@@ -189,6 +189,11 @@ function App() {
     refreshData();
   };
 
+  const deleteAttendanceRecord = async (recordId: string) => {
+      await dbService.deleteAttendance(recordId);
+      refreshData();
+  }
+
   const handleSaveJob = async (job: Job) => {
     await dbService.saveJob(job);
     refreshData();
@@ -507,6 +512,8 @@ function App() {
             currentUserRole={currentUser?.role || Role.EMPLOYEE}
             settings={settings}
             onSaveSettings={handleSaveSettings}
+            onSaveAttendance={addAttendanceRecord}
+            onDeleteAttendance={deleteAttendanceRecord}
           />
         ) : (
           <WorkshopPanel 
