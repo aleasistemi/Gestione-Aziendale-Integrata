@@ -165,6 +165,10 @@ class DatabaseService {
     await setDoc(doc(db, 'attendance', record.id), cleanRecord);
   }
 
+  async deleteAttendance(recordId: string): Promise<void> {
+    await deleteDoc(doc(db, 'attendance', recordId));
+  }
+
   async saveJob(job: Job): Promise<void> {
     const cleanJob = JSON.parse(JSON.stringify(job));
     await setDoc(doc(db, 'jobs', job.id), cleanJob);
