@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings } from '../types';
+import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings, Vehicle, VehicleLog } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer, Search, Archive, RotateCcw } from 'lucide-react';
+import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer, Search, Archive, RotateCcw, Truck, MapPin, User } from 'lucide-react';
 import { analyzeBusinessData } from '../services/geminiService';
 import { read, utils, writeFile } from 'xlsx';
 import { dbService } from '../services/db';
@@ -12,6 +12,8 @@ interface Props {
   logs: WorkLog[];
   employees: Employee[];
   attendance: AttendanceRecord[];
+  vehicles?: Vehicle[];
+  vehicleLogs?: VehicleLog[];
   justifications: DayJustification[];
   customPrompts: AIQuickPrompt[];
   permissions: RolePermissions;
@@ -26,6 +28,8 @@ interface Props {
   onSaveSettings: (settings: GlobalSettings) => void;
   onSaveAttendance: (record: AttendanceRecord) => void;
   onDeleteAttendance: (recordId: string) => void;
+  onSaveVehicle?: (vehicle: Vehicle) => void;
+  onDeleteVehicle?: (id: string) => void;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#EC1D25'];
@@ -90,7 +94,7 @@ const TimeInput = ({ value, onChange, className, placeholder }: { value: string,
     );
 };
 
-export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, justifications = [], customPrompts = [], permissions = {}, onSaveJob, onSaveEmployee, onSaveJustification, onSaveAiPrompts, onSavePermissions, onUpdateLog, currentUserRole, settings, onSaveSettings, onSaveAttendance, onDeleteAttendance }) => {
+export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, vehicles = [], vehicleLogs = [], justifications = [], customPrompts = [], permissions = {}, onSaveJob, onSaveEmployee, onSaveJustification, onSaveAiPrompts, onSavePermissions, onUpdateLog, currentUserRole, settings, onSaveSettings, onSaveAttendance, onDeleteAttendance, onSaveVehicle, onDeleteVehicle }) => {
   
   // Permissions Logic
   const isGodMode = currentUserRole === Role.SYSTEM_ADMIN || currentUserRole === Role.DIRECTION;
@@ -98,7 +102,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const canManageEmployees = currentUserRole === Role.DIRECTION || currentUserRole === Role.SYSTEM_ADMIN;
 
   const getAllowedTabs = () => {
-      if (isSystem) return ['OVERVIEW', 'JOBS', 'HR', 'AI', 'MANAGE', 'CONFIG'];
+      if (isSystem) return ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE', 'CONFIG'];
       const rolePerms = permissions[currentUserRole];
       if (rolePerms) return rolePerms;
       return ['OVERVIEW'];
@@ -110,6 +114,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
     {id: 'OVERVIEW', label: 'Panoramica', icon: LayoutDashboard},
     {id: 'JOBS', label: 'Analisi Commesse', icon: Briefcase},
     {id: 'HR', label: 'HR & PAGHE', icon: Users},
+    {id: 'FLEET', label: 'PARCO MEZZI', icon: Truck},
     {id: 'AI', label: 'AI Analyst', icon: BrainCircuit},
     {id: 'MANAGE', label: 'GESTIONE DATI', icon: Settings},
     {id: 'CONFIG', label: 'CONFIGURAZIONE', icon: Wrench}
@@ -136,6 +141,8 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const [viewArchiveYear, setViewArchiveYear] = useState<string>('active');
   const [clientSearchTerm, setClientSearchTerm] = useState(''); 
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+
+  const [isEditingVehicle, setIsEditingVehicle] = useState<Partial<Vehicle> | null>(null);
 
   useEffect(() => {
      if (availableTabs.length > 0 && !availableTabs.find(t => t.id === activeTab)) {
@@ -794,6 +801,26 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       setIsEditingJob(null); 
   };
 
+  // --- VEHICLE HANDLERS ---
+  const handleSaveVehicleForm = () => {
+      if (!isEditingVehicle?.name || !onSaveVehicle) return;
+      onSaveVehicle({
+          id: isEditingVehicle.id || Date.now().toString(),
+          name: isEditingVehicle.name,
+          plate: isEditingVehicle.plate || '',
+          status: isEditingVehicle.status || 'AVAILABLE',
+          currentDriverId: isEditingVehicle.currentDriverId,
+          lastCheckOut: isEditingVehicle.lastCheckOut
+      });
+      setIsEditingVehicle(null);
+  }
+
+  const handleDeleteVehicle = (id: string) => {
+      if (confirm("Sei sicuro di voler eliminare questo mezzo?") && onDeleteVehicle) {
+          onDeleteVehicle(id);
+      }
+  }
+
   const handleArchiveJob = (job: Job) => {
       if (confirm(`Vuoi archiviare la commessa ${job.code}? Sparirà dalla lista principale ma rimarrà nei report.`)) {
           const archiveYear = new Date().getFullYear();
@@ -1101,6 +1128,102 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
              </div>
         )}
 
+        {/* --- NEW FLEET TAB --- */}
+        {activeTab === 'FLEET' && (
+            <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 md:col-span-2">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Truck className="text-blue-600"/> Stato Parco Mezzi</h2>
+                            <button onClick={() => setIsEditingVehicle({})} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"><Plus size={18} /> Nuovo Mezzo</button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {vehicles.map(vehicle => {
+                                const isAvailable = vehicle.status === 'AVAILABLE';
+                                const driver = employees.find(e => e.id === vehicle.currentDriverId);
+                                
+                                return (
+                                    <div key={vehicle.id} className={`p-4 rounded-xl border flex flex-col gap-2 relative group ${isAvailable ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                        <div className="flex justify-between items-start">
+                                            <h3 className="font-bold text-slate-800">{vehicle.name}</h3>
+                                            <span className={`text-xs font-bold px-2 py-1 rounded ${isAvailable ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                {isAvailable ? 'DISPONIBILE' : 'IN USO'}
+                                            </span>
+                                        </div>
+                                        <p className="text-slate-500 font-mono text-sm">{vehicle.plate}</p>
+                                        {!isAvailable && driver && (
+                                            <div className="mt-2 flex items-center gap-2 text-red-700 font-medium text-sm">
+                                                <User size={16} /> In uso da: {driver.name}
+                                                <br/>
+                                                <span className="text-xs opacity-70">dal {vehicle.lastCheckOut ? new Date(vehicle.lastCheckOut).toLocaleString() : '-'}</span>
+                                            </div>
+                                        )}
+                                        {isAvailable && (
+                                            <div className="mt-2 flex items-center gap-2 text-green-700 font-medium text-sm">
+                                                <CheckCircle2 size={16} /> Parcheggiato in sede
+                                            </div>
+                                        )}
+                                        
+                                        {/* Actions */}
+                                        <div className="absolute top-2 right-12 opacity-0 group-hover:opacity-100 transition flex gap-1 bg-white/80 p-1 rounded shadow-sm">
+                                            <button onClick={() => setIsEditingVehicle(vehicle)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit2 size={14}/></button>
+                                            <button onClick={() => handleDeleteVehicle(vehicle.id)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={14}/></button>
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                            {vehicles.length === 0 && <p className="text-slate-400 italic col-span-2 text-center py-8">Nessun veicolo registrato.</p>}
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-h-[600px] overflow-y-auto">
+                        <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Clock className="text-slate-600"/> Registro Storico</h2>
+                        <div className="space-y-4">
+                            {vehicleLogs.sort((a,b) => new Date(b.timestampOut).getTime() - new Date(a.timestampOut).getTime()).map(log => {
+                                const v = vehicles.find(v => v.id === log.vehicleId);
+                                const e = employees.find(e => e.id === log.employeeId);
+                                return (
+                                    <div key={log.id} className="border-l-2 border-slate-200 pl-4 py-1">
+                                        <div className="text-xs text-slate-400 mb-1">{new Date(log.timestampOut).toLocaleDateString()}</div>
+                                        <div className="font-bold text-slate-800 text-sm">{e?.name || 'Sconosciuto'}</div>
+                                        <div className="text-sm text-slate-600 flex items-center gap-1"><Truck size={12}/> {v?.name || 'Veicolo Eliminato'}</div>
+                                        <div className="text-xs text-slate-500 mt-1">
+                                            Uscita: {new Date(log.timestampOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} 
+                                            {log.timestampIn ? ` - Rientro: ${new Date(log.timestampIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}` : ' (In Corso)'}
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                            {vehicleLogs.length === 0 && <p className="text-slate-400 italic text-sm">Nessuna attività recente.</p>}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Edit Vehicle Modal */}
+                {isEditingVehicle && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                        <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-xl">
+                            <h3 className="text-lg font-bold mb-4">{isEditingVehicle.id ? 'Modifica Veicolo' : 'Nuovo Veicolo'}</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700">Nome Modello</label>
+                                    <input type="text" className="w-full border p-2 rounded" value={isEditingVehicle.name || ''} onChange={e => setIsEditingVehicle({...isEditingVehicle, name: e.target.value})} placeholder="Es. Fiat Ducato"/>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700">Targa</label>
+                                    <input type="text" className="w-full border p-2 rounded" value={isEditingVehicle.plate || ''} onChange={e => setIsEditingVehicle({...isEditingVehicle, plate: e.target.value})} placeholder="AA 000 BB"/>
+                                </div>
+                            </div>
+                            <div className="mt-6 flex justify-end gap-2">
+                                <button onClick={() => setIsEditingVehicle(null)} className="px-4 py-2 text-slate-600 hover:bg-slate-50 rounded">Annulla</button>
+                                <button onClick={handleSaveVehicleForm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        )}
+
         {activeTab === 'AI' && (
              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                  {!settings.geminiApiKey ? (<div className="flex flex-col items-center justify-center py-12 text-center"><div className="bg-orange-100 p-4 rounded-full mb-4"><Key className="text-orange-500" size={32}/></div><h3 className="text-xl font-bold text-slate-800 mb-2">Configurazione Richiesta</h3><p className="text-slate-500 max-w-md mb-6">Per utilizzare l'analista AI, è necessario inserire una API Key di Google Gemini valida nelle impostazioni.</p><button onClick={() => {if(isSystem) setActiveTab('CONFIG')}} className="text-blue-600 font-bold hover:underline">Vai alla Configurazione</button></div>) : (
@@ -1243,16 +1366,4 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 mb-6"><div><h3 className="font-bold text-slate-800 flex items-center gap-2"><Scan size={20}/> Modalità Badge NFC</h3><p className="text-sm text-slate-500">Se attiva, nasconde la lista operatori e richiede la scansione del badge o PIN.</p></div><button onClick={() => onSaveSettings({ ...settings, nfcEnabled: !settings.nfcEnabled })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.nfcEnabled ? 'bg-blue-600' : 'bg-slate-200'}`}><span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${settings.nfcEnabled ? 'translate-x-6' : 'translate-x-1'}`}/></button></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6"><div><label className="block text-sm font-medium text-slate-700 mb-1">Scatto Straordinari (minuti)</label><input type="number" className="w-full border p-2 rounded" value={settings.overtimeSnapMinutes || 30} onChange={(e) => onSaveSettings({...settings, overtimeSnapMinutes: parseInt(e.target.value)})} /><p className="text-xs text-slate-500 mt-1">Gli straordinari serali verranno conteggiati a blocchi di questi minuti.</p></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Scatto Permessi/Uscita Anticipata (minuti)</label><input type="number" className="w-full border p-2 rounded" value={settings.permessoSnapMinutes || 15} onChange={(e) => onSaveSettings({...settings, permessoSnapMinutes: parseInt(e.target.value)})} /><p className="text-xs text-slate-500 mt-1">L'uscita anticipata verrà dedotta solo al raggiungimento di questo scatto.</p></div></div>
                     <div className="mb-6"><h3 className="font-bold text-slate-800 flex items-center gap-2"><Key size={20}/> Gemini API Key</h3><p className="text-sm text-slate-500 mb-2">Inserisci la chiave API di Google Gemini per abilitare l'AI Analyst.</p><div className="flex gap-2"><input type="password" value={settings.geminiApiKey || ''} onChange={(e) => onSaveSettings({...settings, geminiApiKey: e.target.value})} placeholder="sk-..." className="flex-1 border p-2 rounded"/></div></div>
-                    <div><h3 className="font-bold text-slate-800 mb-4">Gestione Fasi Lavorative</h3><div className="flex gap-2 mb-4"><input type="text" value={newPhaseName} onChange={(e) => setNewPhaseName(e.target.value)} placeholder="Nuova fase..." className="border p-2 rounded flex-1"/><button onClick={addPhase} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Aggiungi</button></div><div className="space-y-2">{settings.workPhases.map(phase => (<div key={phase} className="flex justify-between items-center p-3 bg-white border rounded shadow-sm"><span>{phase}</span><button onClick={() => removePhase(phase)} className="text-red-500 hover:text-red-700"><Trash2 size={18}/></button></div>))}</div></div>
-                </div>
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6"><div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold text-slate-800">Permessi Ruoli</h2><button onClick={savePermissions} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">Salva Permessi</button></div><div className="overflow-x-auto"><table className="w-full"><thead><tr className="border-b"><th className="text-left py-2">Ruolo</th>{allPossibleTabs.map(t => <th key={t.id} className="py-2 text-center text-xs">{t.label}</th>)}</tr></thead><tbody>{Object.values(Role).filter(r => r !== Role.SYSTEM_ADMIN).map(role => (<tr key={role} className="border-b hover:bg-slate-50"><td className="py-3 font-medium">{role}</td>{allPossibleTabs.map(tab => (<td key={tab.id} className="text-center"><input type="checkbox" checked={(tempPermissions[role] || []).includes(tab.id)} onChange={() => togglePermission(role, tab.id)} className="w-4 h-4 text-blue-600 rounded"/></td>))}</tr>))}</tbody></table></div></div>
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6"><h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Database className="text-slate-600"/> Backup e Ripristino</h2><p className="text-slate-500 mb-6">Esporta un file JSON completo di tutti i dati (Commesse, Dipendenti, Log, Impostazioni) o ripristina un backup precedente.</p><div className="flex gap-4"><button onClick={handleBackupDownload} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-lg hover:bg-slate-900 transition"><Download size={20}/> Scarica Backup Completo</button><div className="relative"><input type="file" ref={backupInputRef} onChange={handleBackupRestore} accept=".json" className="hidden"/><button onClick={() => backupInputRef.current?.click()} className="flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition"><Upload size={20}/> Ripristina Backup</button></div></div></div>
-            </div>
-        )}
-
-      </div>
-    </div>
-  );
-};
-
-export default AdminDashboard;
+                    <div><h3 className="font-bold text-slate-800 mb-4">Gestione Fasi Lavorative</h3><div className="flex gap-2 mb-4"><input type="text" value={newPhaseName} onChange={(e) => setNewPhaseName(e.target.value)} placeholder="Nuova fase..." className="border p-2 rounded flex-1"/><button onClick={addPhase} className="bg-green-600 text-
