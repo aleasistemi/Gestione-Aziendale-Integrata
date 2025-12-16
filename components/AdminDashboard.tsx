@@ -1,4 +1,5 @@
 
+// ... existing imports ...
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -7,6 +8,7 @@ import { analyzeBusinessData } from '../services/geminiService';
 import { read, utils, writeFile } from 'xlsx';
 import { dbService } from '../services/db';
 
+// ... (Interface Props and TimeInput component remain unchanged) ...
 interface Props {
   jobs: Job[];
   logs: WorkLog[];
@@ -342,13 +344,13 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
           'Codice': j.code,
           'Cliente': j.clientName,
           'Descrizione': j.description,
+          'Data Inizio': j.creationDate || j.startDate, // Export Creation Date
           'Stato': j.status,
           'Budget Ore': j.budgetHours,
           'Ore Usate': j.totalHoursUsed,
           'Valore Commessa': j.budgetValue,
           'Margine': j.profitMargin,
           'Scadenza': j.deadline,
-          'Data Inizio': j.startDate,
           'Priorità': j.priority || 3
       }));
 
@@ -477,6 +479,8 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                       budgetHours: Number(getCol(row, 'Monte Ore') || 0),
                       budgetValue: Number(getCol(row, 'Valore') || 0),
                       deadline: formatDate(getCol(row, 'Data Consegna')),
+                      // Restore Start Date Import
+                      creationDate: existingJob ? (existingJob.creationDate || formatDate(getCol(row, 'Data Inizio'))) : formatDate(getCol(row, 'Data Inizio')),
                       priority: existingJob ? (existingJob.priority || 3) : 3,
                       suggestedOperatorId: existingJob?.suggestedOperatorId
                   };
@@ -701,7 +705,17 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       onSaveAttendance(record);
   }
   const setJustificationForDay = (empId: string, dateStr: string, type: JustificationType, hours: number = 0) => { onSaveJustification({ id: `${empId}-${dateStr}`, employeeId: empId, date: dateStr, type, hoursOffset: hours }); };
-  const handleSaveJobForm = () => { if (!isEditingJob?.code) return; onSaveJob({...isEditingJob, id: isEditingJob.id || Date.now().toString(), status: isEditingJob.status || JobStatus.PLANNED, priority: isEditingJob.priority || 3} as Job); setIsEditingJob(null); };
+  const handleSaveJobForm = () => { 
+      if (!isEditingJob?.code) return; 
+      onSaveJob({
+          ...isEditingJob, 
+          id: isEditingJob.id || Date.now().toString(), 
+          status: isEditingJob.status || JobStatus.PLANNED, 
+          priority: isEditingJob.priority || 3,
+          creationDate: isEditingJob.creationDate || new Date().toISOString().split('T')[0] // Default to today if new
+      } as Job); 
+      setIsEditingJob(null); 
+  };
   const handleSaveEmpForm = () => { if (!isEditingEmp?.name) return; onSaveEmployee({...isEditingEmp, id: isEditingEmp.id || Date.now().toString(), scheduleStartMorning: isEditingEmp.scheduleStartMorning || "08:30", scheduleEndMorning: isEditingEmp.scheduleEndMorning || "12:30", scheduleStartAfternoon: isEditingEmp.scheduleStartAfternoon || "13:30", scheduleEndAfternoon: isEditingEmp.scheduleEndAfternoon || "17:30", toleranceMinutes: isEditingEmp.toleranceMinutes || 10, workDays: isEditingEmp.workDays || [1,2,3,4,5]} as Employee); setIsEditingEmp(null); }
   const handleBulkStatusChange = (status: JobStatus) => { selectedJobIds.forEach(id => { const job = jobs.find(j => j.id === id); if (job) onSaveJob({ ...job, status }); }); setSelectedJobIds(new Set()); }
   const handleUpdatePhase = (log: WorkLog) => { onUpdateLog({ ...log, phase: tempPhase }); setEditingLogId(null); setTempPhase(''); }
@@ -1014,10 +1028,11 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                         <div className="flex justify-between items-center mb-6 flex-wrap gap-4"><h2 className="text-xl font-bold text-slate-800">Elenco Commesse</h2><div className="flex gap-2"><input type="file" accept=".xlsx, .xls, .xml" onChange={handleExcelImport} className="hidden" ref={fileInputRef} />{(isGodMode) && <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"><FileSpreadsheet size={18} /> Importa/Aggiorna</button>}{(isGodMode) && <button onClick={() => handleExcelExportJobs(sortedManageJobs)} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition"><Download size={18} /> Export</button>}{(isSystem) && <button onClick={handleResetJobs} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"><Eraser size={18} /> Svuota Archivio Commesse</button>}<button onClick={() => setIsEditingJob({})} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"><Plus size={18} /> Nuova</button></div></div>
                         {isEditingJob && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="bg-white p-6 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">{isEditingJob.id ? 'Modifica Commessa' : 'Nuova Commessa'}</h3><button onClick={() => setIsEditingJob(null)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div>
                                     <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700">Codice</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.code || ''} onChange={e => setIsEditingJob({...isEditingJob, code: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-700">Cliente</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.clientName || ''} onChange={e => setIsEditingJob({...isEditingJob, clientName: e.target.value})} /></div><div className="col-span-2"><label className="block text-sm font-medium text-slate-700">Descrizione</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.description || ''} onChange={e => setIsEditingJob({...isEditingJob, description: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-700">Budget Ore</label><input type="number" className="w-full border p-2 rounded" value={isEditingJob.budgetHours || ''} onChange={e => setIsEditingJob({...isEditingJob, budgetHours: parseFloat(e.target.value)})} /></div><div><label className="block text-sm font-medium text-slate-700">Valore (€)</label><input type="number" className="w-full border p-2 rounded" value={isEditingJob.budgetValue || ''} onChange={e => setIsEditingJob({...isEditingJob, budgetValue: parseFloat(e.target.value)})} /></div><div><label className="block text-sm font-medium text-slate-700">Scadenza</label><input type="date" className="w-full border p-2 rounded" value={isEditingJob.deadline || ''} onChange={e => setIsEditingJob({...isEditingJob, deadline: e.target.value})} /></div>
+                                        <div><label className="block text-sm font-medium text-slate-700">Data Inizio</label><input type="date" className="w-full border p-2 rounded" value={isEditingJob.creationDate || new Date().toISOString().split('T')[0]} onChange={e => setIsEditingJob({...isEditingJob, creationDate: e.target.value})} /></div>
                                         <div><label className="block text-sm font-medium text-slate-700">Priorità</label><div className="flex gap-1 mt-2">{[1,2,3,4,5].map(star => (<Star key={star} size={24} className={`cursor-pointer ${star <= (isEditingJob.priority || 3) ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} onClick={() => setIsEditingJob({...isEditingJob, priority: star})}/>))}</div></div>
                                         <div><label className="block text-sm font-medium text-slate-700 mb-1">Assegna a Operatore</label><select className="w-full border p-2 rounded" value={isEditingJob.suggestedOperatorId || ''} onChange={e => setIsEditingJob({...isEditingJob, suggestedOperatorId: e.target.value})}><option value="">Nessuno</option>{employees.filter(e => e.role === Role.WORKSHOP).map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select></div><div className="col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Note Interne</label><textarea className="w-full border p-2 rounded resize-y min-h-[80px]" value={isEditingJob.notes || ''} onChange={e => setIsEditingJob({...isEditingJob, notes: e.target.value})} placeholder="Eventuali note tecniche o amministrative..."/></div></div>
                                     <div className="mt-6 flex justify-end gap-2"><button onClick={() => setIsEditingJob(null)} className="px-4 py-2 border rounded hover:bg-slate-50">Annulla</button><button onClick={handleSaveJobForm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva</button></div></div></div>)}
-                        <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th onClick={() => requestSort('code', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Codice {renderSortArrow('code', manageJobSort)}</th><th onClick={() => requestSort('clientName', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Cliente {renderSortArrow('clientName', manageJobSort)}</th><th onClick={() => requestSort('priority', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Priorità {renderSortArrow('priority', manageJobSort)}</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Budget/Valore</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Stato</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{sortedManageJobs.map((job) => (<tr key={job.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{job.code}</td><td className="px-6 py-4 text-slate-500">{job.clientName}</td><td className="px-6 py-4 text-slate-500 flex gap-1">{Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}</td><td className="px-6 py-4 text-slate-500">{job.budgetHours}h / €{job.budgetValue}</td><td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td><td className="px-6 py-4"><button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800"><Edit2 size={18}/></button></td></tr>))}</tbody></table></div>
+                        <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th onClick={() => requestSort('code', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Codice {renderSortArrow('code', manageJobSort)}</th><th onClick={() => requestSort('clientName', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Cliente {renderSortArrow('clientName', manageJobSort)}</th><th onClick={() => requestSort('priority', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Priorità {renderSortArrow('priority', manageJobSort)}</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Data Inizio</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Budget/Valore</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Stato</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{sortedManageJobs.map((job) => (<tr key={job.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{job.code}</td><td className="px-6 py-4 text-slate-500">{job.clientName}</td><td className="px-6 py-4 text-slate-500 flex gap-1">{Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}</td><td className="px-6 py-4 text-slate-500 text-xs">{job.creationDate ? new Date(job.creationDate).toLocaleDateString('it-IT') : '-'}</td><td className="px-6 py-4 text-slate-500">{job.budgetHours}h / €{job.budgetValue}</td><td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td><td className="px-6 py-4"><button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800"><Edit2 size={18}/></button></td></tr>))}</tbody></table></div>
                     </div>
                 )}
                 {manageSubTab === 'EMPLOYEES' && (canManageEmployees || isSystem) && (
@@ -1030,6 +1045,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
             </div>
         )}
 
+        {/* ... (CONFIG tab remains unchanged) ... */}
         {activeTab === 'CONFIG' && isSystem && (
             <div className="space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
