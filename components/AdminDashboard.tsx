@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings, Vehicle, VehicleLog } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer, Search, Archive, RotateCcw, Truck, MapPin, User, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer, Search, Archive, RotateCcw, Truck, MapPin, User, ChevronLeft, ChevronRight, Wifi } from 'lucide-react';
 import { analyzeBusinessData } from '../services/geminiService';
 import { read, utils, writeFile } from 'xlsx';
 import { dbService } from '../services/db';
@@ -143,6 +143,8 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
 
   const [isEditingVehicle, setIsEditingVehicle] = useState<Partial<Vehicle> | null>(null);
+  const [isWritingNfc, setIsWritingNfc] = useState<Partial<Employee> | null>(null);
+  const [nfcWriteStatus, setNfcWriteStatus] = useState<'IDLE'|'WRITING'|'SUCCESS'|'ERROR'>('IDLE');
   
   // Fleet Calendar State
   const [fleetCurrentMonth, setFleetCurrentMonth] = useState(new Date());
@@ -182,6 +184,39 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const uniqueClients = useMemo(() => {
       return Array.from(new Set(jobs.map(j => j.clientName))).sort();
   }, [jobs]);
+
+  // --- NFC WRITER ---
+  const handleWriteNfc = async (emp: Employee) => {
+      setIsWritingNfc(emp);
+      setNfcWriteStatus('IDLE');
+
+      if ('NDEFReader' in window) {
+          try {
+              const ndef = new window.NDEFReader();
+              await ndef.scan(); // Permission request
+              setNfcWriteStatus('WRITING');
+              
+              const codeToWrite = emp.nfcCode || emp.nfcCode2 || emp.id;
+              
+              await ndef.write({
+                  records: [{ recordType: "text", data: codeToWrite }]
+              });
+              
+              setNfcWriteStatus('SUCCESS');
+              setTimeout(() => {
+                  setIsWritingNfc(null);
+                  setNfcWriteStatus('IDLE');
+              }, 2000);
+
+          } catch (error) {
+              console.error(error);
+              setNfcWriteStatus('ERROR');
+          }
+      } else {
+          alert("NFC non supportato su questo dispositivo. Usa un telefono Android.");
+          setIsWritingNfc(null);
+      }
+  }
 
   // --- CORE DATA CALCULATION ---
 
@@ -1427,9 +1462,42 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                         <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold text-slate-800">Elenco Dipendenti</h2><button onClick={() => setIsEditingEmp({})} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"><Plus size={18} /> Nuovo Dipendente</button></div>
                          {isEditingEmp && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="bg-white p-6 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">{isEditingEmp.id ? 'Modifica Dipendente' : 'Nuovo Dipendente'}</h3><button onClick={() => setIsEditingEmp(null)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700">Nome e Cognome</label><input type="text" className="w-full border p-2 rounded" value={isEditingEmp.name || ''} onChange={e => setIsEditingEmp({...isEditingEmp, name: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-700">Ruolo</label><select className="w-full border p-2 rounded" value={isEditingEmp.role || Role.EMPLOYEE} onChange={e => setIsEditingEmp({...isEditingEmp, role: e.target.value as Role})}>{Object.values(Role).map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="block text-sm font-medium text-slate-700">Reparto</label><input type="text" className="w-full border p-2 rounded" value={isEditingEmp.department || ''} onChange={e => setIsEditingEmp({...isEditingEmp, department: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-700">Costo Orario (€)</label><input type="number" className="w-full border p-2 rounded" value={isEditingEmp.hourlyRate || ''} onChange={e => setIsEditingEmp({...isEditingEmp, hourlyRate: parseFloat(e.target.value)})} /></div><div className="border-t col-span-2 pt-4 mt-2 mb-2"><h4 className="font-bold text-slate-700 text-sm">Sicurezza Accessi</h4></div><div><label className="block text-sm font-medium text-slate-700">Codice NFC Badge</label><input type="text" className="w-full border p-2 rounded" value={isEditingEmp.nfcCode || ''} onChange={e => setIsEditingEmp({...isEditingEmp, nfcCode: e.target.value})} placeholder="Es. NFC_123" /></div><div><label className="block text-sm font-medium text-slate-700">Codice NFC Secondario</label><input type="text" className="w-full border p-2 rounded" value={isEditingEmp.nfcCode2 || ''} onChange={e => setIsEditingEmp({...isEditingEmp, nfcCode2: e.target.value})} placeholder="Badge alternativo" /></div><div><label className="block text-sm font-medium text-slate-700">PIN Accesso (4-6 cifre)</label><input type="text" className="w-full border p-2 rounded" value={isEditingEmp.pin || ''} onChange={e => setIsEditingEmp({...isEditingEmp, pin: e.target.value})} placeholder="Es. 1234" /></div><div className="border-t col-span-2 pt-4 mt-2 mb-2"><h4 className="font-bold text-slate-700 text-sm">Configurazione Orari</h4></div><div><label className="block text-sm font-medium text-slate-700">Inizio Mattina</label><input type="time" className="w-full border p-2 rounded" value={isEditingEmp.scheduleStartMorning || '08:30'} onChange={e => setIsEditingEmp({...isEditingEmp, scheduleStartMorning: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-700">Fine Mattina</label><input type="time" className="w-full border p-2 rounded" value={isEditingEmp.scheduleEndMorning || '12:30'} onChange={e => setIsEditingEmp({...isEditingEmp, scheduleEndMorning: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-700">Inizio Pomeriggio</label><input type="time" className="w-full border p-2 rounded" value={isEditingEmp.scheduleStartAfternoon || '13:30'} onChange={e => setIsEditingEmp({...isEditingEmp, scheduleStartAfternoon: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-700">Fine Pomeriggio</label><input type="time" className="w-full border p-2 rounded" value={isEditingEmp.scheduleEndAfternoon || '17:30'} onChange={e => setIsEditingEmp({...isEditingEmp, scheduleEndAfternoon: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-700">Tolleranza Ritardo (min)</label><input type="number" className="w-full border p-2 rounded" value={isEditingEmp.toleranceMinutes || 10} onChange={e => setIsEditingEmp({...isEditingEmp, toleranceMinutes: parseInt(e.target.value)})} /></div><div className="col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">Giorni Lavorativi</label><div className="flex gap-4 flex-wrap">{['Dom','Lun','Mar','Mer','Gio','Ven','Sab'].map((dayName, idx) => (<label key={idx} className="flex items-center gap-1 text-sm cursor-pointer"><input type="checkbox" checked={(isEditingEmp.workDays || [1,2,3,4,5]).includes(idx)} onChange={(e) => {const currentDays = isEditingEmp.workDays || [1,2,3,4,5]; let newDays; if(e.target.checked) newDays = [...currentDays, idx]; else newDays = currentDays.filter(d => d !== idx); setIsEditingEmp({...isEditingEmp, workDays: newDays});}}/>{dayName}</label>))}</div></div></div><div className="mt-6 flex justify-end gap-2"><button onClick={() => setIsEditingEmp(null)} className="px-4 py-2 border rounded hover:bg-slate-50">Annulla</button><button onClick={handleSaveEmpForm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva</button></div></div></div>)}
-                        <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Nome</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ruolo</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Reparto</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Costo/h</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{employees.map((emp) => (<tr key={emp.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{emp.name}</td><td className="px-6 py-4 text-slate-500">{emp.role}</td><td className="px-6 py-4 text-slate-500">{emp.department}</td><td className="px-6 py-4 text-slate-500">€{emp.hourlyRate}</td><td className="px-6 py-4"><button onClick={() => setIsEditingEmp(emp)} className="text-blue-600 hover:text-blue-800"><Edit2 size={18}/></button></td></tr>))}</tbody></table></div>
+                        <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Nome</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ruolo</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Reparto</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Costo/h</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{employees.map((emp) => (<tr key={emp.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{emp.name}</td><td className="px-6 py-4 text-slate-500">{emp.role}</td><td className="px-6 py-4 text-slate-500">{emp.department}</td><td className="px-6 py-4 text-slate-500">€{emp.hourlyRate}</td>
+                        <td className="px-6 py-4 flex items-center gap-2">
+                            <button onClick={() => handleWriteNfc(emp)} className="text-purple-600 hover:text-purple-800 bg-purple-50 p-2 rounded" title="Scrivi Badge NFC"><Wifi size={18}/></button>
+                            <button onClick={() => setIsEditingEmp(emp)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-2 rounded"><Edit2 size={18}/></button>
+                        </td></tr>))}</tbody></table></div>
                     </div>
                 )}
+            </div>
+        )}
+
+         {/* NFC WRITER MODAL */}
+         {isWritingNfc && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-6">
+                <div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center shadow-2xl relative">
+                    <button onClick={() => setIsWritingNfc(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={24}/></button>
+                    
+                    <div className="mb-6 flex justify-center">
+                        <div className={`p-6 rounded-full ${nfcWriteStatus === 'WRITING' ? 'bg-blue-100 animate-pulse' : nfcWriteStatus === 'SUCCESS' ? 'bg-green-100' : nfcWriteStatus === 'ERROR' ? 'bg-red-100' : 'bg-slate-100'}`}>
+                            <Wifi size={64} className={`${nfcWriteStatus === 'WRITING' ? 'text-blue-600' : nfcWriteStatus === 'SUCCESS' ? 'text-green-600' : nfcWriteStatus === 'ERROR' ? 'text-red-600' : 'text-slate-400'}`} />
+                        </div>
+                    </div>
+
+                    <h3 className="text-xl font-bold text-slate-800 mb-2">Scrivi Badge NFC</h3>
+                    <p className="text-slate-500 mb-6 font-medium">{isWritingNfc.name}</p>
+                    
+                    {nfcWriteStatus === 'IDLE' && <p className="text-sm text-slate-600 mb-4">In attesa di avvio...</p>}
+                    {nfcWriteStatus === 'WRITING' && (
+                        <div>
+                            <p className="font-bold text-blue-600 animate-pulse mb-2">AVVICINA IL BADGE AL TELEFONO</p>
+                            <p className="text-xs text-slate-400">Sto scrivendo il codice: <span className="font-mono bg-slate-100 px-1">{isWritingNfc.nfcCode || isWritingNfc.nfcCode2 || isWritingNfc.id}</span></p>
+                        </div>
+                    )}
+                    {nfcWriteStatus === 'SUCCESS' && <p className="font-bold text-green-600 text-lg">Badge scritto con successo!</p>}
+                    {nfcWriteStatus === 'ERROR' && <p className="font-bold text-red-600">Errore scrittura. Riprova.</p>}
+
+                </div>
             </div>
         )}
 

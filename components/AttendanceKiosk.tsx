@@ -53,12 +53,27 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
               console.log("NFC Scan started successfully");
 
               ndef.onreading = (event: any) => {
-                  const serialNumber = event.serialNumber;
-                  console.log("NFC Read:", serialNumber);
+                  let readCode = "";
+
+                  // 1. Try reading Text Record (Mobile Written)
+                  const message = event.message;
+                  for (const record of message.records) {
+                    if (record.recordType === "text") {
+                        const textDecoder = new TextDecoder(record.encoding);
+                        readCode = textDecoder.decode(record.data);
+                        console.log("Read from NDEF Text:", readCode);
+                        break;
+                    }
+                  }
+
+                  // 2. Fallback to Serial Number (PC Mode / Raw Tag)
+                  if (!readCode) {
+                      const serialNumber = event.serialNumber;
+                      readCode = serialNumber.replaceAll(':', '').toUpperCase();
+                      console.log("Read from Serial:", readCode);
+                  }
                   
-                  // Strategy 1: Try Serial Number
-                  const cleanSerial = serialNumber.replaceAll(':', '').toUpperCase();
-                  processScan(cleanSerial);
+                  processScan(readCode);
               };
 
               ndef.onreadingerror = () => {
@@ -103,7 +118,8 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
       
       const emp = employees.find(e => 
           (e.nfcCode && e.nfcCode.trim().toUpperCase() === cleanCode) ||
-          (e.nfcCode2 && e.nfcCode2.trim().toUpperCase() === cleanCode)
+          (e.nfcCode2 && e.nfcCode2.trim().toUpperCase() === cleanCode) ||
+          (e.id && e.id.trim().toUpperCase() === cleanCode) // Fallback to ID match
       );
                 
       if (emp) {
