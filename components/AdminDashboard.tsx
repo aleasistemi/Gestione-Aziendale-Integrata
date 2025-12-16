@@ -106,7 +106,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
   const allowedTabsList = getAllowedTabs();
 
-  // All Tabs Definition (used for rendering permissions table later)
   const allPossibleTabs = [
     {id: 'OVERVIEW', label: 'Panoramica', icon: LayoutDashboard},
     {id: 'JOBS', label: 'Analisi Commesse', icon: Briefcase},
@@ -129,12 +128,10 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const [jobSort, setJobSort] = useState<SortConfig>({ key: 'creationDate', direction: 'desc' });
   const [manageJobSort, setManageJobSort] = useState<SortConfig>({ key: 'creationDate', direction: 'desc' });
   
-  // DATE FILTER STATE
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [newPhaseName, setNewPhaseName] = useState('');
 
-  // Search and Archive State
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
   const [viewArchiveYear, setViewArchiveYear] = useState<string>('active');
   const [clientSearchTerm, setClientSearchTerm] = useState(''); 
@@ -163,7 +160,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
   const [tempPermissions, setTempPermissions] = useState<RolePermissions>(permissions);
 
-  // Available Archives (Years)
   const availableArchiveYears = useMemo(() => {
       const years = new Set<number>();
       jobs.filter(j => j.isArchived).forEach(j => {
@@ -172,14 +168,13 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       return Array.from(years).sort((a,b) => b - a);
   }, [jobs]);
 
-  // Unique Clients for Suggestion
   const uniqueClients = useMemo(() => {
       return Array.from(new Set(jobs.map(j => j.clientName))).sort();
   }, [jobs]);
 
   // --- CORE DATA CALCULATION ---
 
-  // 1. Logs filtered by Date Range (used for charts and Overview)
+  // 1. Logs filtered by Date Range
   const filteredLogsInDateRange = useMemo(() => {
       if (!filterStartDate && !filterEndDate) return logs;
       return logs.filter(l => {
@@ -190,7 +185,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       });
   }, [logs, filterStartDate, filterEndDate]);
 
-  // 2. Base Job Stats (Global View - used in lists)
+  // 2. Base Job Stats
   const jobStats = useMemo(() => {
     return jobs.map(job => {
       const jobLogs = logs.filter(l => l.jobId === job.id);
@@ -213,23 +208,16 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
     });
   }, [jobs, logs, employees]);
 
-  // 3. OVERVIEW Stats (Responsive to Date Range)
-  // This calculates job statistics specifically based on the filtered period
+  // 3. OVERVIEW Stats
   const overviewJobStats = useMemo(() => {
-      // Find jobs that have activity in the filtered logs OR were created in the date range
       const relevantJobIds = new Set(filteredLogsInDateRange.map(l => l.jobId));
-      
-      // Also include jobs created in the range, even if no logs yet
       jobs.forEach(j => {
           if ((!filterStartDate || (j.creationDate && j.creationDate >= filterStartDate)) && 
               (!filterEndDate || (j.creationDate && j.creationDate <= filterEndDate))) {
               relevantJobIds.add(j.id);
           }
       });
-
-      // Map only relevant jobs for the dashboard
       const relevantJobs = jobStats.filter(j => relevantJobIds.has(j.id) && !j.isArchived);
-
       return relevantJobs;
   }, [jobStats, filteredLogsInDateRange, filterStartDate, filterEndDate, jobs]);
 
@@ -237,7 +225,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   // --- TABLE FILTERS ---
   const filterJobsForTable = (jobList: typeof jobStats, isManageTable: boolean) => {
       return jobList.filter(j => {
-          // Archive Logic
           if (isManageTable) {
               if (viewArchiveYear === 'active') {
                   if (j.isArchived) return false;
@@ -248,7 +235,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
               if (j.isArchived) return false;
           }
 
-          // Search Logic
           if (globalSearchTerm.length >= 3) {
               const searchLower = globalSearchTerm.toLowerCase();
               const matchesCode = j.code.toLowerCase().includes(searchLower);
@@ -256,7 +242,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
               if (!matchesCode && !matchesClient) return false;
           }
 
-          // Date Filter (Strict for Table view)
           if (filterStartDate && j.startDate !== '-' && j.startDate < filterStartDate) return false;
           if (filterEndDate && j.startDate !== '-' && j.startDate > filterEndDate) return false;
 
@@ -295,11 +280,10 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       return currentSort.direction === 'asc' ? <ArrowUp size={14} className="inline ml-1"/> : <ArrowDown size={14} className="inline ml-1"/>;
   }
 
-  // --- DASHBOARD ANALYTICS (Using Overview/Filtered Stats) ---
+  // --- DASHBOARD ANALYTICS ---
   
   const clientData = useMemo(() => {
     const data: {[key: string]: number} = {};
-    // Use filtered logs to show hours worked IN THE PERIOD per client
     filteredLogsInDateRange.forEach(log => {
       const job = jobs.find(j => j.id === log.jobId);
       if (job) {
@@ -311,7 +295,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
   const statusData = useMemo(() => {
     const counts: {[key: string]: number} = {};
-    // Use overview jobs to show status of jobs ACTIVE IN PERIOD
     overviewJobStats.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
     return Object.keys(counts).map(key => ({ name: key, value: counts[key] }));
   }, [overviewJobStats]);
@@ -326,7 +309,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
   const overBudgetClients = useMemo(() => {
       const map: {[key:string]: {over: number, total: number}} = {};
-      // Filter for overbudget jobs that are relevant to this period
       overviewJobStats.filter(j => j.isOverBudget).forEach(j => {
           if (!map[j.clientName]) map[j.clientName] = {over: 0, total: 0};
           map[j.clientName].over += (j.totalHoursUsed - j.budgetHours);
@@ -341,7 +323,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
   const phaseEfficiency = useMemo(() => {
       const map: {[phase:string]: {[emp:string]: number}} = {};
-      // Efficiency based on filtered logs (period performance)
       filteredLogsInDateRange.forEach(l => {
           const empName = employees.find(e => e.id === l.employeeId)?.name || 'Unknown';
           if (!map[l.phase]) map[l.phase] = {};
@@ -362,7 +343,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
   const activeOperators = useMemo(() => {
      const map: {[id:string]: number} = {};
-     // Operators active IN THE PERIOD
      filteredLogsInDateRange.forEach(l => {
          map[l.employeeId] = (map[l.employeeId] || 0) + l.hours;
      });
@@ -373,7 +353,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   }, [filteredLogsInDateRange, employees]);
 
   const recentActivities = useMemo(() => {
-      // Recent activities IN THE PERIOD
       return [...filteredLogsInDateRange]
         .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 5)
@@ -1100,6 +1079,40 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
             </div>
         )}
 
+        {activeTab === 'HR' && (
+             <div className="space-y-6">
+                <div className="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <Calendar className="text-blue-600"/>
+                    <label className="text-sm font-medium text-slate-700">Mese di Competenza:</label>
+                    <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border border-slate-300 rounded px-2 py-1"/>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                     <div className="p-4 border-b border-slate-100 flex justify-between items-center"><h3 className="font-bold text-slate-700">Riepilogo Presenze Mensile</h3><button onClick={handleExportSummary} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm transition"><FileSpreadsheet size={16}/> Export Riepilogo Paghe</button></div>
+                    <table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Dipendente</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Giorni Pres.</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ore Ordinarie</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Straordinari</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Assenze/Ferie/Mal.</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{payrollStats.map(stat => (<tr key={stat.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{stat.name}<div className="text-xs text-slate-400">{stat.role}</div></td><td className="px-6 py-4 text-slate-500">{stat.daysWorked}</td><td className="px-6 py-4 font-bold text-slate-700">{stat.totalWorked.toFixed(2)}</td><td className="px-6 py-4 text-slate-500">{stat.totalOvertime > 0 ? <span className="text-orange-600 font-bold">{stat.totalOvertime.toFixed(2)}</span> : '-'}</td><td className="px-6 py-4 text-xs space-y-1">{stat.absenceCount > 0 && <div className="text-red-600 font-bold">Assenze Ing.: {stat.absenceCount} gg</div>}{stat.ferieCount > 0 && <div className="text-blue-600">Ferie: {stat.ferieCount} gg</div>}{stat.malattiaCount > 0 && <div className="text-purple-600">Malattia: {stat.malattiaCount} gg</div>}</td><td className="px-6 py-4 text-right"><button onClick={() => setSelectedEmpForDetail(stat.id)} className="bg-slate-100 hover:bg-blue-50 text-blue-600 px-3 py-1 rounded border border-slate-200 text-sm font-medium transition">Gestisci / Cartellino</button></td></tr>))}</tbody></table>
+                </div>
+                {selectedEmpForDetail && (
+                    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-xl w-full max-w-6xl max-h-[95vh] flex flex-col shadow-2xl">
+                            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl"><div><h3 className="text-2xl font-bold text-slate-800">{employees.find(e => e.id === selectedEmpForDetail)?.name}</h3><p className="text-slate-500 text-sm">Cartellino Presenze: {new Date(selectedMonth).toLocaleDateString('it-IT', {month:'long', year:'numeric'})}</p></div><div className="flex gap-2"><button onClick={() => handleExportTimecard(selectedEmpForDetail)} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><FileSpreadsheet size={18}/> Scarica Excel</button><button onClick={() => setSelectedEmpForDetail(null)} className="p-2 hover:bg-slate-200 rounded-full transition"><X size={24} className="text-slate-500"/></button></div></div>
+                            <div className="flex-1 overflow-auto p-6"><table className="w-full text-sm border-collapse"><thead><tr className="bg-slate-100 text-slate-600 border-b border-slate-300"><th className="p-2 border border-slate-200 text-left">Data</th><th className="p-2 border border-slate-200 text-center w-20">Entrata</th><th className="p-2 border border-slate-200 text-center w-20">Uscita (P)</th><th className="p-2 border border-slate-200 text-center w-20">Entrata (P)</th><th className="p-2 border border-slate-200 text-center w-20">Uscita</th><th className="p-2 border border-slate-200 text-center w-20 bg-blue-50 font-bold text-blue-800">Ore Ord.</th><th className="p-2 border border-slate-200 text-center w-20 bg-orange-50 font-bold text-orange-800">Straord.</th><th className="p-2 border border-slate-200 text-center w-24">Giustificativo</th><th className="p-2 border border-slate-200 text-center w-16">Note</th></tr></thead><tbody>{Array.from({length: new Date(parseInt(selectedMonth.split('-')[0]), parseInt(selectedMonth.split('-')[1]), 0).getDate()}, (_, i) => i + 1).map(day => {const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`; const stats = calculateDailyStats(selectedEmpForDetail, dateStr); const dateObj = new Date(dateStr); const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6; let rowClass = "hover:bg-slate-50"; if (isWeekend) rowClass = "bg-slate-50 text-slate-400"; if (stats.isAbsent) rowClass = "bg-red-50"; if (stats.isAnomaly) rowClass = "bg-orange-50"; return (<tr key={day} className={`border-b border-slate-200 ${rowClass}`}><td className="p-2 border border-slate-200"><div className="font-bold">{String(day).padStart(2,'0')}</div><div className="text-xs uppercase">{dateObj.toLocaleDateString('it-IT', {weekday:'short'})}</div></td><td className={`p-1 border border-slate-200 text-center ${stats.isLate ? 'text-orange-600 font-bold' : ''}`}><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.firstIn || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.firstInId, 'ENTRATA')} /></td><td className="p-1 border border-slate-200 text-center"><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.lunchOut || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.lunchOutId, 'USCITA')} /></td><td className="p-1 border border-slate-200 text-center"><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.lunchIn || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.lunchInId, 'ENTRATA')} /></td><td className="p-1 border border-slate-200 text-center"><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.lastOut || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.lastOutId, 'USCITA')} /></td><td className="p-2 border border-slate-200 text-center font-bold">{stats.standardHours > 0 ? stats.standardHours.toFixed(2) : '-'}</td><td className="p-2 border border-slate-200 text-center text-orange-600 font-bold">{stats.overtime > 0 ? stats.overtime.toFixed(2) : ''}</td><td className="p-2 border border-slate-200 text-center"><select className={`w-full text-xs p-1 border rounded ${stats.justification ? 'bg-blue-100 font-bold text-blue-800 border-blue-300' : 'bg-white'}`} value={stats.justification?.type || ''} onChange={(e) => {if (e.target.value) setJustificationForDay(selectedEmpForDetail, dateStr, e.target.value as JustificationType); else onSaveJustification({ ...stats.justification!, id: `${selectedEmpForDetail}-${dateStr}`, type: JustificationType.STANDARD });}}><option value="">-</option><option value={JustificationType.FERIE}>FERIE</option><option value={JustificationType.MALATTIA}>MALATTIA</option><option value={JustificationType.PERMESSO}>PERMESSO</option></select></td><td className="p-2 border border-slate-200 text-center text-xs">{stats.isLate && <span className="block text-orange-600 font-bold">RITARDO</span>}{stats.isAbsent && <span className="block text-red-600 font-bold">ASSENZA</span>}{stats.isAnomaly && <span className="block text-orange-500 font-bold">ANOMALIA</span>}</td></tr>)})}</tbody></table></div>
+                        </div>
+                    </div>
+                )}
+             </div>
+        )}
+
+        {activeTab === 'AI' && (
+             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                 {!settings.geminiApiKey ? (<div className="flex flex-col items-center justify-center py-12 text-center"><div className="bg-orange-100 p-4 rounded-full mb-4"><Key className="text-orange-500" size={32}/></div><h3 className="text-xl font-bold text-slate-800 mb-2">Configurazione Richiesta</h3><p className="text-slate-500 max-w-md mb-6">Per utilizzare l'analista AI, è necessario inserire una API Key di Google Gemini valida nelle impostazioni.</p><button onClick={() => {if(isSystem) setActiveTab('CONFIG')}} className="text-blue-600 font-bold hover:underline">Vai alla Configurazione</button></div>) : (
+                 <>
+                    <div className="flex items-center gap-3 mb-6"><div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-2 rounded-lg"><BrainCircuit size={24} /></div><div><h2 className="text-xl font-bold text-slate-800">Analista Aziendale IA</h2><p className="text-slate-500 text-sm">Analisi predittiva e insight sui dati aziendali</p></div></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">{customPrompts.map((prompt) => (<div key={prompt.id} className="relative group">{editingPromptId === prompt.id ? (<div className="p-3 bg-white border-2 border-blue-500 rounded-lg shadow-lg z-10 absolute top-0 left-0 w-full min-w-[200px]"><input type="text" className="w-full text-xs font-bold mb-2 border-b outline-none" value={tempPromptLabel} onChange={(e) => setTempPromptLabel(e.target.value)} placeholder="Etichetta"/><textarea className="w-full text-xs p-1 border rounded resize-none outline-none mb-2" rows={3} value={tempPromptText} onChange={(e) => setTempPromptText(e.target.value)} placeholder="Domanda per IA..."/><div className="flex justify-end gap-1"><button onClick={() => setEditingPromptId(null)} className="p-1 hover:bg-slate-100 rounded text-slate-500"><X size={14}/></button><button onClick={() => handleSavePrompt(prompt.id)} className="p-1 hover:bg-green-100 text-green-600 rounded"><Save size={14}/></button></div></div>) : (<button onClick={() => handleAskAI(prompt.prompt)} className="w-full p-3 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 border border-slate-200 rounded-lg text-left transition relative h-full flex flex-col justify-between group-hover:shadow-md"><span className="text-sm font-semibold text-slate-700 block mb-1">{prompt.label}</span><span className="text-xs text-slate-400 line-clamp-2">{prompt.prompt}</span><div onClick={(e) => { e.stopPropagation(); setEditingPromptId(prompt.id); setTempPromptLabel(prompt.label); setTempPromptText(prompt.prompt); }} className="absolute top-2 right-2 p-1 text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition"><Pencil size={12} /></div></button>)}</div>))}</div>
+                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 min-h-[200px] mb-4 shadow-inner">{aiResponse ? (<div className="prose prose-sm max-w-none text-slate-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }} />) : (<div className="text-center text-slate-400 py-16 flex flex-col items-center gap-3">{isLoadingAi ? <Loader2 className="animate-spin text-blue-500" size={32}/> : <div className="flex flex-col items-center"><BrainCircuit size={48} className="text-slate-300 mb-2"/><span>Seleziona una domanda rapida o scrivi la tua richiesta qui sotto.</span></div>}</div>)}</div>
+                    <div className="flex gap-2 relative"><input type="text" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="Fai una domanda libera sui tuoi dati..." className="flex-1 border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none pl-12 shadow-sm"/><div className="absolute left-4 top-3.5 text-slate-400"><Info size={20}/></div><button onClick={() => handleAskAI()} disabled={!aiPrompt || isLoadingAi} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 shadow-sm">{isLoadingAi ? 'Analisi...' : 'Chiedi'}</button></div>
+                 </>)}
+            </div>
+        )}
+
         {activeTab === 'MANAGE' && (
             <div className="space-y-6">
                 <div className="flex gap-4 mb-6"><button onClick={() => setManageSubTab('JOBS')} className={`px-4 py-2 rounded-lg font-medium transition ${manageSubTab === 'JOBS' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>Gestione Commesse</button>{(canManageEmployees || isSystem) && <button onClick={() => setManageSubTab('EMPLOYEES')} className={`px-4 py-2 rounded-lg font-medium transition ${manageSubTab === 'EMPLOYEES' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>Gestione Dipendenti</button>}</div>
@@ -1220,6 +1233,20 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                         <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Nome</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ruolo</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Reparto</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Costo/h</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{employees.map((emp) => (<tr key={emp.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{emp.name}</td><td className="px-6 py-4 text-slate-500">{emp.role}</td><td className="px-6 py-4 text-slate-500">{emp.department}</td><td className="px-6 py-4 text-slate-500">€{emp.hourlyRate}</td><td className="px-6 py-4"><button onClick={() => setIsEditingEmp(emp)} className="text-blue-600 hover:text-blue-800"><Edit2 size={18}/></button></td></tr>))}</tbody></table></div>
                     </div>
                 )}
+            </div>
+        )}
+
+        {activeTab === 'CONFIG' && isSystem && (
+            <div className="space-y-6">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Settings className="text-slate-600"/> Impostazioni Globali</h2>
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 mb-6"><div><h3 className="font-bold text-slate-800 flex items-center gap-2"><Scan size={20}/> Modalità Badge NFC</h3><p className="text-sm text-slate-500">Se attiva, nasconde la lista operatori e richiede la scansione del badge o PIN.</p></div><button onClick={() => onSaveSettings({ ...settings, nfcEnabled: !settings.nfcEnabled })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.nfcEnabled ? 'bg-blue-600' : 'bg-slate-200'}`}><span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${settings.nfcEnabled ? 'translate-x-6' : 'translate-x-1'}`}/></button></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6"><div><label className="block text-sm font-medium text-slate-700 mb-1">Scatto Straordinari (minuti)</label><input type="number" className="w-full border p-2 rounded" value={settings.overtimeSnapMinutes || 30} onChange={(e) => onSaveSettings({...settings, overtimeSnapMinutes: parseInt(e.target.value)})} /><p className="text-xs text-slate-500 mt-1">Gli straordinari serali verranno conteggiati a blocchi di questi minuti.</p></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Scatto Permessi/Uscita Anticipata (minuti)</label><input type="number" className="w-full border p-2 rounded" value={settings.permessoSnapMinutes || 15} onChange={(e) => onSaveSettings({...settings, permessoSnapMinutes: parseInt(e.target.value)})} /><p className="text-xs text-slate-500 mt-1">L'uscita anticipata verrà dedotta solo al raggiungimento di questo scatto.</p></div></div>
+                    <div className="mb-6"><h3 className="font-bold text-slate-800 flex items-center gap-2"><Key size={20}/> Gemini API Key</h3><p className="text-sm text-slate-500 mb-2">Inserisci la chiave API di Google Gemini per abilitare l'AI Analyst.</p><div className="flex gap-2"><input type="password" value={settings.geminiApiKey || ''} onChange={(e) => onSaveSettings({...settings, geminiApiKey: e.target.value})} placeholder="sk-..." className="flex-1 border p-2 rounded"/></div></div>
+                    <div><h3 className="font-bold text-slate-800 mb-4">Gestione Fasi Lavorative</h3><div className="flex gap-2 mb-4"><input type="text" value={newPhaseName} onChange={(e) => setNewPhaseName(e.target.value)} placeholder="Nuova fase..." className="border p-2 rounded flex-1"/><button onClick={addPhase} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Aggiungi</button></div><div className="space-y-2">{settings.workPhases.map(phase => (<div key={phase} className="flex justify-between items-center p-3 bg-white border rounded shadow-sm"><span>{phase}</span><button onClick={() => removePhase(phase)} className="text-red-500 hover:text-red-700"><Trash2 size={18}/></button></div>))}</div></div>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6"><div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold text-slate-800">Permessi Ruoli</h2><button onClick={savePermissions} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">Salva Permessi</button></div><div className="overflow-x-auto"><table className="w-full"><thead><tr className="border-b"><th className="text-left py-2">Ruolo</th>{allPossibleTabs.map(t => <th key={t.id} className="py-2 text-center text-xs">{t.label}</th>)}</tr></thead><tbody>{Object.values(Role).filter(r => r !== Role.SYSTEM_ADMIN).map(role => (<tr key={role} className="border-b hover:bg-slate-50"><td className="py-3 font-medium">{role}</td>{allPossibleTabs.map(tab => (<td key={tab.id} className="text-center"><input type="checkbox" checked={(tempPermissions[role] || []).includes(tab.id)} onChange={() => togglePermission(role, tab.id)} className="w-4 h-4 text-blue-600 rounded"/></td>))}</tr>))}</tbody></table></div></div>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6"><h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Database className="text-slate-600"/> Backup e Ripristino</h2><p className="text-slate-500 mb-6">Esporta un file JSON completo di tutti i dati (Commesse, Dipendenti, Log, Impostazioni) o ripristina un backup precedente.</p><div className="flex gap-4"><button onClick={handleBackupDownload} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-lg hover:bg-slate-900 transition"><Download size={20}/> Scarica Backup Completo</button><div className="relative"><input type="file" ref={backupInputRef} onChange={handleBackupRestore} accept=".json" className="hidden"/><button onClick={() => backupInputRef.current?.click()} className="flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition"><Upload size={20}/> Ripristina Backup</button></div></div></div>
             </div>
         )}
 
