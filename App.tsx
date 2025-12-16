@@ -74,6 +74,11 @@ function App() {
       setIsAuthenticated(true);
     }
 
+    // Check for Persistent Kiosk Mode
+    const savedKioskMode = localStorage.getItem('kiosk_mode');
+    if (savedKioskMode === 'ATTENDANCE') setViewMode('ATTENDANCE_KIOSK');
+    if (savedKioskMode === 'VEHICLE') setViewMode('VEHICLE_KIOSK');
+
     refreshData();
     const handleStorageChange = () => refreshData();
     window.addEventListener('storage', handleStorageChange);
@@ -89,8 +94,10 @@ function App() {
     };
   }, []);
 
+  const hasNfcSupport = 'NDEFReader' in window;
+
   const startNfcScan = async () => {
-      if (settings.nfcEnabled && 'NDEFReader' in window && viewMode === 'LOGIN') {
+      if (settings.nfcEnabled && hasNfcSupport && viewMode === 'LOGIN') {
           try {
               const ndef = new window.NDEFReader();
               await ndef.scan();
@@ -106,7 +113,7 @@ function App() {
               console.error("NFC Error:", error);
               setNfcStatus('ERROR');
           }
-      } else if (!('NDEFReader' in window)) {
+      } else if (!hasNfcSupport) {
           setNfcStatus('UNSUPPORTED');
       }
   };
@@ -188,8 +195,14 @@ function App() {
 
   const handleKioskEntry = () => {
       if (kioskPin === '1409') {
-          if (targetKioskMode === 'ATTENDANCE') setViewMode('ATTENDANCE_KIOSK');
-          if (targetKioskMode === 'VEHICLE') setViewMode('VEHICLE_KIOSK');
+          if (targetKioskMode === 'ATTENDANCE') {
+              setViewMode('ATTENDANCE_KIOSK');
+              localStorage.setItem('kiosk_mode', 'ATTENDANCE'); // PERSISTENCE
+          }
+          if (targetKioskMode === 'VEHICLE') {
+              setViewMode('VEHICLE_KIOSK');
+              localStorage.setItem('kiosk_mode', 'VEHICLE'); // PERSISTENCE
+          }
           
           setShowKioskMenu(false);
           setKioskPin('');
@@ -198,6 +211,11 @@ function App() {
           alert('PIN Errato');
           setKioskPin('');
       }
+  }
+
+  const handleExitKiosk = () => {
+      localStorage.removeItem('kiosk_mode'); // Clear persistence
+      setViewMode('LOGIN');
   }
 
   const handleLogout = () => {
@@ -369,7 +387,7 @@ function App() {
       <AttendanceKiosk 
         employees={employees} 
         onRecord={addAttendanceRecord}
-        onExit={() => setViewMode('LOGIN')}
+        onExit={handleExitKiosk}
         nfcEnabled={settings.nfcEnabled}
       />
     );
@@ -381,7 +399,7 @@ function App() {
             employees={employees}
             vehicles={vehicles}
             onAction={handleVehicleAction}
-            onExit={() => setViewMode('LOGIN')}
+            onExit={handleExitKiosk}
             nfcEnabled={settings.nfcEnabled}
           />
       )
@@ -416,7 +434,8 @@ function App() {
             
             <div className="pt-2">
               
-              {settings.nfcEnabled ? (
+              {/* Only show NFC UI if enabled settings AND browser supports Web NFC (Mobile) */}
+              {settings.nfcEnabled && hasNfcSupport ? (
                    <div className="flex flex-col items-center py-4 w-full relative">
                       <input 
                           ref={loginInputRef}
@@ -437,11 +456,11 @@ function App() {
                           </div>
                           <div className={`absolute bottom-0 px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 shadow-sm ${nfcStatus === 'LISTENING' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                              <div className={`w-2 h-2 rounded-full animate-pulse ${nfcStatus === 'LISTENING' ? 'bg-green-500' : 'bg-slate-400'}`}></div>
-                             {nfcStatus === 'LISTENING' ? 'Lettore Attivo' : 'Lettore Inattivo'}
+                             {nfcStatus === 'LISTENING' ? 'Lettore Attivo' : 'Tocca per Attivare'}
                           </div>
                       </div>
                       
-                      <p className="text-slate-500 font-medium mb-2 mt-2">Avvicina il Badge al lettore...</p>
+                      <p className="text-slate-500 font-medium mb-2 mt-2">Avvicina il Badge al retro del telefono</p>
                       
                        {/* Explicit Start Button if failed */}
                       {nfcStatus !== 'LISTENING' && nfcStatus !== 'UNSUPPORTED' && (
@@ -462,6 +481,7 @@ function App() {
                       </button>
                    </div>
               ) : (
+                /* PC VIEW or NFC Disabled: Show List of Users */
                 <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
                     {employees.map(emp => (
                     <button 
