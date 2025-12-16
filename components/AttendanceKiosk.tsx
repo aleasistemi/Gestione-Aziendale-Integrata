@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, AttendanceRecord, Role } from '../types';
-import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Wifi, AlertCircle, Play } from 'lucide-react';
+import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Wifi, AlertCircle, Play, Laptop } from 'lucide-react';
 
 interface Props {
   employees: Employee[];
@@ -41,8 +41,10 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
     return () => clearInterval(timer);
   }, []);
 
+  const hasNfcSupport = 'NDEFReader' in window;
+
   const startNfcScan = async () => {
-      if (nfcEnabled && 'NDEFReader' in window) {
+      if (nfcEnabled && hasNfcSupport) {
           try {
               const ndef = new window.NDEFReader();
               ndefRef.current = ndef;
@@ -67,7 +69,7 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
               console.error("NFC Error:", error);
               setNfcStatus('ERROR');
           }
-      } else if (!('NDEFReader' in window)) {
+      } else if (!hasNfcSupport) {
           setNfcStatus('UNSUPPORTED');
       }
   };
@@ -237,15 +239,21 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
                        </div>
                   </div>
                   
-                  <div className={`flex items-center justify-center gap-3 mb-8 px-6 py-2 rounded-full shadow-inner border border-slate-200 transition-colors ${nfcStatus === 'LISTENING' ? 'bg-green-50' : 'bg-slate-100'}`}>
-                      <div className={`w-3 h-3 rounded-full animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)] ${nfcStatus === 'LISTENING' ? 'bg-green-500' : 'bg-slate-400'}`}></div>
+                  <div className={`flex items-center justify-center gap-3 mb-8 px-6 py-2 rounded-full shadow-inner border border-slate-200 transition-colors ${nfcStatus === 'LISTENING' || nfcStatus === 'UNSUPPORTED' ? 'bg-green-50' : 'bg-slate-100'}`}>
+                      <div className={`w-3 h-3 rounded-full animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)] ${nfcStatus === 'LISTENING' || nfcStatus === 'UNSUPPORTED' ? 'bg-green-500' : 'bg-slate-400'}`}></div>
                       <span className="text-slate-600 font-bold uppercase tracking-wider text-sm">
-                          {nfcStatus === 'LISTENING' ? 'NFC Attivo (Appoggia Badge)' : 'Lettore USB Pronto'}
+                          {nfcStatus === 'LISTENING' ? 'NFC Mobile Attivo' : nfcStatus === 'UNSUPPORTED' ? 'Lettore USB Pronto' : 'Attesa Lettore...'}
                       </span>
                   </div>
+
+                  {!hasNfcSupport && (
+                      <div className="flex items-center gap-2 text-slate-400 mb-6 text-sm">
+                          <Laptop size={16}/> Modalità PC (Tastiera USB)
+                      </div>
+                  )}
                   
                   {/* Explicit Start Button if failed */}
-                  {nfcStatus !== 'LISTENING' && nfcStatus !== 'UNSUPPORTED' && (
+                  {nfcStatus !== 'LISTENING' && hasNfcSupport && (
                       <button onClick={startNfcScan} className="mb-6 flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-full font-bold shadow-lg hover:bg-blue-700 transition">
                           <Play size={16}/> ATTIVA LETTORE NFC
                       </button>
