@@ -1,7 +1,8 @@
 {
   "name": "Alea Gestionale",
   "short_name": "AleaApp",
-  "start_url": ".",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",

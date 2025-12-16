@@ -6,7 +6,7 @@ import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
 import VehicleKiosk from './components/VehicleKiosk';
 import { AdminDashboard } from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Settings, Wifi, Truck } from 'lucide-react';
+import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Settings, Wifi, Truck, Play, AlertCircle } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -32,6 +32,7 @@ function App() {
   // Login NFC State
   const [scanValue, setScanValue] = useState('');
   const loginInputRef = useRef<HTMLInputElement>(null);
+  const [nfcStatus, setNfcStatus] = useState<'IDLE' | 'LISTENING' | 'ERROR' | 'UNSUPPORTED'>('IDLE');
 
   const [showLoginPinPad, setShowLoginPinPad] = useState(false);
   const [loginPin, setLoginPin] = useState('');
@@ -88,9 +89,33 @@ function App() {
     };
   }, []);
 
+  const startNfcScan = async () => {
+      if (settings.nfcEnabled && 'NDEFReader' in window && viewMode === 'LOGIN') {
+          try {
+              const ndef = new window.NDEFReader();
+              await ndef.scan();
+              setNfcStatus('LISTENING');
+
+              ndef.onreading = (event: any) => {
+                  const serialNumber = event.serialNumber;
+                  const cleanSerial = serialNumber.replaceAll(':', '').toUpperCase();
+                  processLoginScan(cleanSerial);
+              };
+
+          } catch (error) {
+              console.error("NFC Error:", error);
+              setNfcStatus('ERROR');
+          }
+      } else if (!('NDEFReader' in window)) {
+          setNfcStatus('UNSUPPORTED');
+      }
+  };
+
   // Force focus on login scanner input
   useEffect(() => {
     if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskMenu) {
+         startNfcScan(); // Attempt auto-start
+         
          const focusInterval = setInterval(() => {
               if (document.activeElement !== loginInputRef.current) {
                   loginInputRef.current?.focus();
@@ -410,13 +435,26 @@ function App() {
                           <div className="relative z-10 bg-white p-6 rounded-full shadow-lg border-2 border-blue-100">
                              <Scan size={48} className="text-blue-600" />
                           </div>
-                          <div className="absolute bottom-0 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold border border-green-200 flex items-center gap-1 shadow-sm">
-                             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                             Lettore Attivo
+                          <div className={`absolute bottom-0 px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 shadow-sm ${nfcStatus === 'LISTENING' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                             <div className={`w-2 h-2 rounded-full animate-pulse ${nfcStatus === 'LISTENING' ? 'bg-green-500' : 'bg-slate-400'}`}></div>
+                             {nfcStatus === 'LISTENING' ? 'Lettore Attivo' : 'Lettore Inattivo'}
                           </div>
                       </div>
                       
                       <p className="text-slate-500 font-medium mb-2 mt-2">Avvicina il Badge al lettore...</p>
+                      
+                       {/* Explicit Start Button if failed */}
+                      {nfcStatus !== 'LISTENING' && nfcStatus !== 'UNSUPPORTED' && (
+                          <button onClick={startNfcScan} className="mb-4 flex items-center gap-2 bg-blue-600 text-white px-4 py-1.5 rounded-full font-bold shadow hover:bg-blue-700 transition text-sm">
+                              <Play size={14}/> ATTIVA LETTORE
+                          </button>
+                      )}
+
+                       {nfcStatus === 'ERROR' && (
+                          <div className="mb-4 text-xs text-red-500 flex items-center gap-1">
+                              <AlertCircle size={12}/> Errore accesso NFC Mobile.
+                          </div>
+                      )}
                       
                       {loginMessage && <p className="text-red-500 font-bold mb-4 animate-bounce bg-red-50 px-4 py-2 rounded-lg">{loginMessage}</p>}
                       <button onClick={() => setShowLoginPinPad(true)} className="relative z-10 flex items-center gap-2 text-blue-600 hover:underline mt-4 text-sm font-medium">
