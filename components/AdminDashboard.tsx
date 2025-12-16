@@ -1,14 +1,12 @@
 
-// ... existing imports ...
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer } from 'lucide-react';
+import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer, Search, Archive, RotateCcw } from 'lucide-react';
 import { analyzeBusinessData } from '../services/geminiService';
 import { read, utils, writeFile } from 'xlsx';
 import { dbService } from '../services/db';
 
-// ... (Interface Props and TimeInput component remain unchanged) ...
 interface Props {
   jobs: Job[];
   logs: WorkLog[];
@@ -108,14 +106,16 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
   const allowedTabsList = getAllowedTabs();
 
-  const availableTabs = [
+  const allPossibleTabs = [
     {id: 'OVERVIEW', label: 'Panoramica', icon: LayoutDashboard},
     {id: 'JOBS', label: 'Analisi Commesse', icon: Briefcase},
     {id: 'HR', label: 'HR & PAGHE', icon: Users},
     {id: 'AI', label: 'AI Analyst', icon: BrainCircuit},
     {id: 'MANAGE', label: 'GESTIONE DATI', icon: Settings},
     {id: 'CONFIG', label: 'CONFIGURAZIONE', icon: Wrench}
-  ].filter(t => allowedTabsList.includes(t.id));
+  ];
+
+  const availableTabs = allPossibleTabs.filter(t => allowedTabsList.includes(t.id));
 
   const [activeTab, setActiveTab] = useState(availableTabs[0]?.id || 'OVERVIEW');
   const [manageSubTab, setManageSubTab] = useState<'JOBS' | 'EMPLOYEES'>('JOBS');
@@ -124,11 +124,20 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [tempPhase, setTempPhase] = useState<string>('');
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
-  const [jobSort, setJobSort] = useState<SortConfig>(null);
-  const [manageJobSort, setManageJobSort] = useState<SortConfig>(null);
+  
+  // Sorting: Default Newest First (descending creation/id)
+  const [jobSort, setJobSort] = useState<SortConfig>({ key: 'creationDate', direction: 'desc' });
+  const [manageJobSort, setManageJobSort] = useState<SortConfig>({ key: 'creationDate', direction: 'desc' });
+  
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [newPhaseName, setNewPhaseName] = useState('');
+
+  // Search State
+  const [globalSearchTerm, setGlobalSearchTerm] = useState('');
+
+  // Archive State
+  const [viewArchiveYear, setViewArchiveYear] = useState<string>('active');
 
   useEffect(() => {
      if (availableTabs.length > 0 && !availableTabs.find(t => t.id === activeTab)) {
@@ -147,11 +156,28 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   const [selectedEmpForDetail, setSelectedEmpForDetail] = useState<string | null>(null);
 
   const [isEditingJob, setIsEditingJob] = useState<Partial<Job> | null>(null);
+  const [clientSearchTerm, setClientSearchTerm] = useState(''); 
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+
   const [isEditingEmp, setIsEditingEmp] = useState<Partial<Employee> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   const [tempPermissions, setTempPermissions] = useState<RolePermissions>(permissions);
+
+  // Available Archives (Years)
+  const availableArchiveYears = useMemo(() => {
+      const years = new Set<number>();
+      jobs.filter(j => j.isArchived).forEach(j => {
+          if (j.archiveYear) years.add(j.archiveYear);
+      });
+      return Array.from(years).sort((a,b) => b - a);
+  }, [jobs]);
+
+  // Unique Clients for Suggestion
+  const uniqueClients = useMemo(() => {
+      return Array.from(new Set(jobs.map(j => j.clientName))).sort();
+  }, [jobs]);
 
   const jobStats = useMemo(() => {
     return jobs.map(job => {
@@ -166,19 +192,15 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       const isOverBudget = totalHoursUsed > job.budgetHours;
       const profitMargin = job.budgetValue - totalCost;
 
-      // Improved sorting: Date first, then prioritize Manual Logs over Imported Logs (assuming manual are newer updates on same day), then ID string
+      // Improved sorting: Date first, then prioritize Manual Logs over Imported Logs
       const sortedLogs = [...jobLogs].sort((a,b) => {
           const dateA = new Date(a.date).getTime();
           const dateB = new Date(b.date).getTime();
           if (dateA !== dateB) return dateA - dateB;
-          
-          // Tie-breaker: Prefer Manual IDs (numeric-ish) over 'log-' (imported) to appear LATER (as current status)
           const isAManual = !a.id.startsWith('log-');
           const isBManual = !b.id.startsWith('log-');
-          
-          if (isAManual && !isBManual) return 1; // Manual > Import
-          if (!isAManual && isBManual) return -1; // Import < Manual
-
+          if (isAManual && !isBManual) return 1; 
+          if (!isAManual && isBManual) return -1; 
           return a.id.localeCompare(b.id);
       });
 
@@ -190,28 +212,63 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
     });
   }, [jobs, logs, employees]);
 
-  const filterJobsByDate = (jobList: typeof jobStats) => {
-      if (!filterStartDate && !filterEndDate) return jobList;
+  // General Filter (Date + Search + Archive status for VIEWING tables)
+  // NOTE: Reports use 'jobStats' directly (includes archived). Tables use 'filteredJobStats' (excludes archived unless selected).
+  const filterJobsForTable = (jobList: typeof jobStats, isManageTable: boolean) => {
       return jobList.filter(j => {
-          if (j.startDate === '-') return false; 
-          const isAfterStart = !filterStartDate || j.startDate >= filterStartDate;
-          const isBeforeEnd = !filterEndDate || j.startDate <= filterEndDate;
-          return isAfterStart && isBeforeEnd;
+          // 1. Archive Logic
+          if (isManageTable) {
+              if (viewArchiveYear === 'active') {
+                  if (j.isArchived) return false;
+              } else {
+                  if (!j.isArchived || j.archiveYear !== parseInt(viewArchiveYear)) return false;
+              }
+          } else {
+              // Analysis Tab: Show active by default, search can find archived? 
+              // Requirement: "Analysis" searches by client/code. Let's hide archived by default unless specifically searching? 
+              // Standard behavior: Analysis usually on active. 
+              if (j.isArchived) return false;
+          }
+
+          // 2. Search Logic (3+ chars)
+          if (globalSearchTerm.length >= 3) {
+              const searchLower = globalSearchTerm.toLowerCase();
+              const matchesCode = j.code.toLowerCase().includes(searchLower);
+              const matchesClient = j.clientName.toLowerCase().includes(searchLower);
+              if (!matchesCode && !matchesClient) return false;
+          }
+
+          // 3. Date Filter (Only apply if explicit dates set)
+          if (filterStartDate && j.startDate !== '-' && j.startDate < filterStartDate) return false;
+          if (filterEndDate && j.startDate !== '-' && j.startDate > filterEndDate) return false;
+
+          return true;
       });
   };
 
   const sortData = (data: any[], config: SortConfig) => {
       if (!config) return data;
       return [...data].sort((a, b) => {
-          if (a[config.key] < b[config.key]) return config.direction === 'asc' ? -1 : 1;
-          if (a[config.key] > b[config.key]) return config.direction === 'asc' ? 1 : -1;
+          let valA = a[config.key];
+          let valB = b[config.key];
+          
+          // Handle Date strings comparison
+          if (config.key === 'creationDate' || config.key === 'deadline' || config.key === 'startDate') {
+              valA = valA || '';
+              valB = valB || '';
+          }
+
+          if (valA < valB) return config.direction === 'asc' ? -1 : 1;
+          if (valA > valB) return config.direction === 'asc' ? 1 : -1;
           return 0;
       });
   };
 
-  const filteredJobStats = useMemo(() => filterJobsByDate(jobStats), [jobStats, filterStartDate, filterEndDate]);
+  const filteredJobStats = useMemo(() => filterJobsForTable(jobStats, false), [jobStats, filterStartDate, filterEndDate, globalSearchTerm]);
   const sortedJobStats = useMemo(() => sortData(filteredJobStats, jobSort), [filteredJobStats, jobSort]);
-  const sortedManageJobs = useMemo(() => sortData(filteredJobStats, manageJobSort), [filteredJobStats, manageJobSort]); 
+  
+  const manageFilteredStats = useMemo(() => filterJobsForTable(jobStats, true), [jobStats, filterStartDate, filterEndDate, globalSearchTerm, viewArchiveYear]);
+  const sortedManageJobs = useMemo(() => sortData(manageFilteredStats, manageJobSort), [manageFilteredStats, manageJobSort]); 
 
   const requestSort = (key: string, currentSort: SortConfig, setSort: any) => {
       let direction: 'asc' | 'desc' = 'asc';
@@ -226,37 +283,45 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       return currentSort.direction === 'asc' ? <ArrowUp size={14} className="inline ml-1"/> : <ArrowDown size={14} className="inline ml-1"/>;
   }
 
+  // --- Dashboard Analytics (Always includes Archived Data for correctness) ---
+  // Using 'jobStats' (full list) instead of filtered lists for charts.
+  
   const clientData = useMemo(() => {
     const data: {[key: string]: number} = {};
-    filteredJobStats.forEach(stat => {
+    jobStats.forEach(stat => {
       data[stat.clientName] = (data[stat.clientName] || 0) + stat.totalHoursUsed;
     });
     return Object.keys(data).map(key => ({ name: key, hours: data[key] }));
-  }, [filteredJobStats]);
+  }, [jobStats]);
 
   const statusData = useMemo(() => {
     const counts: {[key: string]: number} = {};
-    filteredJobStats.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
+    jobStats.forEach(j => { 
+        // If archived, we might want to count it as Completed or separate?
+        // User said "archive by year... consultable". 
+        // For current status chart, let's stick to status field.
+        counts[j.status] = (counts[j.status] || 0) + 1; 
+    });
     return Object.keys(counts).map(key => ({ name: key, value: counts[key] }));
-  }, [filteredJobStats]);
+  }, [jobStats]);
 
   const topClientsByRevenue = useMemo(() => {
       const map: {[key:string]: number} = {};
-      filteredJobStats.forEach(j => {
+      jobStats.forEach(j => {
           map[j.clientName] = (map[j.clientName] || 0) + j.budgetValue;
       });
       return Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 5);
-  }, [filteredJobStats]);
+  }, [jobStats]);
 
   const overBudgetClients = useMemo(() => {
       const map: {[key:string]: {over: number, total: number}} = {};
-      filteredJobStats.filter(j => j.isOverBudget).forEach(j => {
+      jobStats.filter(j => j.isOverBudget).forEach(j => {
           if (!map[j.clientName]) map[j.clientName] = {over: 0, total: 0};
           map[j.clientName].over += (j.totalHoursUsed - j.budgetHours);
           map[j.clientName].total += j.totalHoursUsed;
       });
       return Object.entries(map).sort((a,b) => b[1].over - a[1].over).slice(0, 5);
-  }, [filteredJobStats]);
+  }, [jobStats]);
 
   const packagingJobs = useMemo(() => {
       return jobStats.filter(j => j.status === JobStatus.IN_PROGRESS && j.lastPhase.toLowerCase().includes('imballaggio'));
@@ -276,8 +341,9 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   }, [logs, employees]);
 
   const expiringJobs = useMemo(() => {
+      // Exclude archived from expiring list
       return jobStats
-        .filter(j => j.status === JobStatus.IN_PROGRESS && j.deadline)
+        .filter(j => !j.isArchived && j.status === JobStatus.IN_PROGRESS && j.deadline)
         .sort((a,b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
         .slice(0, 5);
   }, [jobStats]);
@@ -318,7 +384,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
     setAiPrompt(promptText);
     setIsLoadingAi(true);
     setAiResponse('');
-    const context = { jobs: filteredJobStats, logs, employees };
+    const context = { jobs: jobStats, logs, employees }; // Feed ALL stats (including archived) to AI
     try {
         const result = await analyzeBusinessData(promptText, context, settings.geminiApiKey);
         setAiResponse(result);
@@ -344,14 +410,15 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
           'Codice': j.code,
           'Cliente': j.clientName,
           'Descrizione': j.description,
-          'Data Inizio': j.creationDate || j.startDate, // Export Creation Date
+          'Data Inizio': j.creationDate || j.startDate, 
           'Stato': j.status,
           'Budget Ore': j.budgetHours,
           'Ore Usate': j.totalHoursUsed,
           'Valore Commessa': j.budgetValue,
           'Margine': j.profitMargin,
           'Scadenza': j.deadline,
-          'Priorità': j.priority || 3
+          'Priorità': j.priority || 3,
+          'Archiviata': j.isArchived ? `Sì (${j.archiveYear})` : 'No'
       }));
 
       const worksheet = utils.json_to_sheet(data);
@@ -399,7 +466,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
   // --- Import Logic ---
   const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      // (Import implementation stays the same, reusing previous code block logic implicitly)
       const file = e.target.files?.[0];
       if (!file) return;
 
@@ -433,17 +499,29 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
           const colMap: {[key:string]: number} = {};
           headerRow.forEach((cell, idx) => { if(typeof cell === 'string') colMap[cell.trim()] = idx; });
           const getCol = (row: any[], name: string) => { const idx = colMap[name]; return (idx !== undefined && row[idx] !== undefined) ? row[idx] : null; }
+          
           const formatDate = (val: any) => {
               if(!val) return '';
-              if (typeof val === 'string' && val.includes('.')) {
-                  const parts = val.split('.');
-                  if (parts.length === 3) {
-                      let year = parseInt(parts[2]);
-                      if (year < 100) year += 2000;
-                      return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+              if (val instanceof Date) return val.toISOString().split('T')[0];
+              if (typeof val === 'number') {
+                  // Excel serial date to JS Date
+                  const d = new Date(Math.round((val - 25569)*86400*1000));
+                  return d.toISOString().split('T')[0];
+              }
+              if (typeof val === 'string') {
+                  if (val.includes('.')) {
+                    const parts = val.split('.');
+                    if (parts.length === 3) {
+                        let year = parseInt(parts[2]);
+                        if (year < 100) year += 2000;
+                        return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                    }
+                  }
+                  if (val.includes('/')) {
+                      const parts = val.split('/');
+                      if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
                   }
               }
-              if(val instanceof Date) return val.toISOString().split('T')[0];
               return '';
           }
 
@@ -470,6 +548,11 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                       codeToIdMap.set(cleanCode, jobId);
                       jobsCreated++;
                   }
+                  
+                  // Safe getter for Start Date using Column Name or Index 11 (Column L)
+                  let rawStartDate = getCol(row, 'Data Inizio');
+                  if (!rawStartDate && row.length > 11) rawStartDate = row[11];
+
                   const jobData: Job = {
                       id: jobId,
                       code: cleanCode,
@@ -479,8 +562,8 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                       budgetHours: Number(getCol(row, 'Monte Ore') || 0),
                       budgetValue: Number(getCol(row, 'Valore') || 0),
                       deadline: formatDate(getCol(row, 'Data Consegna')),
-                      // Restore Start Date Import
-                      creationDate: existingJob ? (existingJob.creationDate || formatDate(getCol(row, 'Data Inizio'))) : formatDate(getCol(row, 'Data Inizio')),
+                      // Update creation date logic
+                      creationDate: formatDate(rawStartDate) || (existingJob ? existingJob.creationDate : new Date().toISOString().split('T')[0]),
                       priority: existingJob ? (existingJob.priority || 3) : 3,
                       suggestedOperatorId: existingJob?.suggestedOperatorId
                   };
@@ -705,6 +788,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       onSaveAttendance(record);
   }
   const setJustificationForDay = (empId: string, dateStr: string, type: JustificationType, hours: number = 0) => { onSaveJustification({ id: `${empId}-${dateStr}`, employeeId: empId, date: dateStr, type, hoursOffset: hours }); };
+  
   const handleSaveJobForm = () => { 
       if (!isEditingJob?.code) return; 
       onSaveJob({
@@ -716,6 +800,20 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       } as Job); 
       setIsEditingJob(null); 
   };
+
+  const handleArchiveJob = (job: Job) => {
+      if (confirm(`Vuoi archiviare la commessa ${job.code}? Sparirà dalla lista principale ma rimarrà nei report.`)) {
+          const archiveYear = new Date().getFullYear();
+          onSaveJob({ ...job, isArchived: true, archiveYear });
+      }
+  };
+
+  const handleRestoreJob = (job: Job) => {
+      if (confirm(`Vuoi ripristinare la commessa ${job.code}?`)) {
+          onSaveJob({ ...job, isArchived: false, archiveYear: undefined });
+      }
+  }
+
   const handleSaveEmpForm = () => { if (!isEditingEmp?.name) return; onSaveEmployee({...isEditingEmp, id: isEditingEmp.id || Date.now().toString(), scheduleStartMorning: isEditingEmp.scheduleStartMorning || "08:30", scheduleEndMorning: isEditingEmp.scheduleEndMorning || "12:30", scheduleStartAfternoon: isEditingEmp.scheduleStartAfternoon || "13:30", scheduleEndAfternoon: isEditingEmp.scheduleEndAfternoon || "17:30", toleranceMinutes: isEditingEmp.toleranceMinutes || 10, workDays: isEditingEmp.workDays || [1,2,3,4,5]} as Employee); setIsEditingEmp(null); }
   const handleBulkStatusChange = (status: JobStatus) => { selectedJobIds.forEach(id => { const job = jobs.find(j => j.id === id); if (job) onSaveJob({ ...job, status }); }); setSelectedJobIds(new Set()); }
   const handleUpdatePhase = (log: WorkLog) => { onUpdateLog({ ...log, phase: tempPhase }); setEditingLogId(null); setTempPhase(''); }
@@ -773,15 +871,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       writeFile(wb, `Cartellino_${emp.name.replace(/\s+/g, '_')}_${selectedMonth}.xlsx`);
   };
 
-  const allPossibleTabs = [
-    {id: 'OVERVIEW', label: 'Panoramica'},
-    {id: 'JOBS', label: 'Analisi Commesse'},
-    {id: 'HR', label: 'HR & PAGHE'},
-    {id: 'AI', label: 'AI Analyst'},
-    {id: 'MANAGE', label: 'GESTIONE DATI'},
-    {id: 'CONFIG', label: 'CONFIGURAZIONE'}
-  ];
-
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8 print:p-0 print:max-w-none bg-slate-50 min-h-screen">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
@@ -828,7 +917,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 print:hidden">
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                     <div className="flex justify-between items-start">
-                        <div><p className="text-slate-500 text-sm font-medium">Commesse Attive</p><h3 className="text-2xl font-bold text-slate-800">{jobs.filter(j => j.status === JobStatus.IN_PROGRESS).length}</h3></div>
+                        <div><p className="text-slate-500 text-sm font-medium">Commesse Attive</p><h3 className="text-2xl font-bold text-slate-800">{jobs.filter(j => j.status === JobStatus.IN_PROGRESS && !j.isArchived).length}</h3></div>
                         <Briefcase className="text-blue-500 bg-blue-50 p-2 rounded-lg" size={40} />
                     </div>
                 </div>
@@ -919,12 +1008,24 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
             </>
         )}
         
-        {/* ... (Other tabs JOBS, HR, AI, MANAGE, CONFIG reuse existing code structure) ... */}
         {activeTab === 'JOBS' && (
              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-50 gap-4">
-                    <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-4 flex-wrap flex-1">
                         <h3 className="font-bold text-slate-700">Analisi Dettagliata Commesse</h3>
+                        
+                        {/* Global Search Bar */}
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                placeholder="Cerca Commessa o Cliente..." 
+                                value={globalSearchTerm}
+                                onChange={(e) => setGlobalSearchTerm(e.target.value)}
+                                className="pl-9 pr-4 py-1.5 border border-slate-300 rounded-lg text-sm w-64 focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                            <Search className="absolute left-3 top-2 text-slate-400" size={16}/>
+                        </div>
+
                         <div className="flex items-center gap-2 text-sm bg-white p-1 rounded border border-slate-200">
                             <Calendar size={14} className="text-slate-400 ml-1"/>
                             <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="outline-none text-slate-600 w-28"/>
@@ -985,54 +1086,119 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
             </div>
         )}
 
-        {activeTab === 'HR' && (
-             <div className="space-y-6">
-                <div className="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                    <Calendar className="text-blue-600"/>
-                    <label className="text-sm font-medium text-slate-700">Mese di Competenza:</label>
-                    <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border border-slate-300 rounded px-2 py-1"/>
-                </div>
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                     <div className="p-4 border-b border-slate-100 flex justify-between items-center"><h3 className="font-bold text-slate-700">Riepilogo Presenze Mensile</h3><button onClick={handleExportSummary} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm transition"><FileSpreadsheet size={16}/> Export Riepilogo Paghe</button></div>
-                    <table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Dipendente</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Giorni Pres.</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ore Ordinarie</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Straordinari</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Assenze/Ferie/Mal.</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{payrollStats.map(stat => (<tr key={stat.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{stat.name}<div className="text-xs text-slate-400">{stat.role}</div></td><td className="px-6 py-4 text-slate-500">{stat.daysWorked}</td><td className="px-6 py-4 font-bold text-slate-700">{stat.totalWorked.toFixed(2)}</td><td className="px-6 py-4 text-slate-500">{stat.totalOvertime > 0 ? <span className="text-orange-600 font-bold">{stat.totalOvertime.toFixed(2)}</span> : '-'}</td><td className="px-6 py-4 text-xs space-y-1">{stat.absenceCount > 0 && <div className="text-red-600 font-bold">Assenze Ing.: {stat.absenceCount} gg</div>}{stat.ferieCount > 0 && <div className="text-blue-600">Ferie: {stat.ferieCount} gg</div>}{stat.malattiaCount > 0 && <div className="text-purple-600">Malattia: {stat.malattiaCount} gg</div>}</td><td className="px-6 py-4 text-right"><button onClick={() => setSelectedEmpForDetail(stat.id)} className="bg-slate-100 hover:bg-blue-50 text-blue-600 px-3 py-1 rounded border border-slate-200 text-sm font-medium transition">Gestisci / Cartellino</button></td></tr>))}</tbody></table>
-                </div>
-                {selectedEmpForDetail && (
-                    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-xl w-full max-w-6xl max-h-[95vh] flex flex-col shadow-2xl">
-                            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl"><div><h3 className="text-2xl font-bold text-slate-800">{employees.find(e => e.id === selectedEmpForDetail)?.name}</h3><p className="text-slate-500 text-sm">Cartellino Presenze: {new Date(selectedMonth).toLocaleDateString('it-IT', {month:'long', year:'numeric'})}</p></div><div className="flex gap-2"><button onClick={() => handleExportTimecard(selectedEmpForDetail)} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><FileSpreadsheet size={18}/> Scarica Excel</button><button onClick={() => setSelectedEmpForDetail(null)} className="p-2 hover:bg-slate-200 rounded-full transition"><X size={24} className="text-slate-500"/></button></div></div>
-                            <div className="flex-1 overflow-auto p-6"><table className="w-full text-sm border-collapse"><thead><tr className="bg-slate-100 text-slate-600 border-b border-slate-300"><th className="p-2 border border-slate-200 text-left">Data</th><th className="p-2 border border-slate-200 text-center w-20">Entrata</th><th className="p-2 border border-slate-200 text-center w-20">Uscita (P)</th><th className="p-2 border border-slate-200 text-center w-20">Entrata (P)</th><th className="p-2 border border-slate-200 text-center w-20">Uscita</th><th className="p-2 border border-slate-200 text-center w-20 bg-blue-50 font-bold text-blue-800">Ore Ord.</th><th className="p-2 border border-slate-200 text-center w-20 bg-orange-50 font-bold text-orange-800">Straord.</th><th className="p-2 border border-slate-200 text-center w-24">Giustificativo</th><th className="p-2 border border-slate-200 text-center w-16">Note</th></tr></thead><tbody>{Array.from({length: new Date(parseInt(selectedMonth.split('-')[0]), parseInt(selectedMonth.split('-')[1]), 0).getDate()}, (_, i) => i + 1).map(day => {const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`; const stats = calculateDailyStats(selectedEmpForDetail, dateStr); const dateObj = new Date(dateStr); const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6; let rowClass = "hover:bg-slate-50"; if (isWeekend) rowClass = "bg-slate-50 text-slate-400"; if (stats.isAbsent) rowClass = "bg-red-50"; if (stats.isAnomaly) rowClass = "bg-orange-50"; return (<tr key={day} className={`border-b border-slate-200 ${rowClass}`}><td className="p-2 border border-slate-200"><div className="font-bold">{String(day).padStart(2,'0')}</div><div className="text-xs uppercase">{dateObj.toLocaleDateString('it-IT', {weekday:'short'})}</div></td><td className={`p-1 border border-slate-200 text-center ${stats.isLate ? 'text-orange-600 font-bold' : ''}`}><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.firstIn || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.firstInId, 'ENTRATA')} /></td><td className="p-1 border border-slate-200 text-center"><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.lunchOut || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.lunchOutId, 'USCITA')} /></td><td className="p-1 border border-slate-200 text-center"><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.lunchIn || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.lunchInId, 'ENTRATA')} /></td><td className="p-1 border border-slate-200 text-center"><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.lastOut || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.lastOutId, 'USCITA')} /></td><td className="p-2 border border-slate-200 text-center font-bold">{stats.standardHours > 0 ? stats.standardHours.toFixed(2) : '-'}</td><td className="p-2 border border-slate-200 text-center text-orange-600 font-bold">{stats.overtime > 0 ? stats.overtime.toFixed(2) : ''}</td><td className="p-2 border border-slate-200 text-center"><select className={`w-full text-xs p-1 border rounded ${stats.justification ? 'bg-blue-100 font-bold text-blue-800 border-blue-300' : 'bg-white'}`} value={stats.justification?.type || ''} onChange={(e) => {if (e.target.value) setJustificationForDay(selectedEmpForDetail, dateStr, e.target.value as JustificationType); else onSaveJustification({ ...stats.justification!, id: `${selectedEmpForDetail}-${dateStr}`, type: JustificationType.STANDARD });}}><option value="">-</option><option value={JustificationType.FERIE}>FERIE</option><option value={JustificationType.MALATTIA}>MALATTIA</option><option value={JustificationType.PERMESSO}>PERMESSO</option></select></td><td className="p-2 border border-slate-200 text-center text-xs">{stats.isLate && <span className="block text-orange-600 font-bold">RITARDO</span>}{stats.isAbsent && <span className="block text-red-600 font-bold">ASSENZA</span>}{stats.isAnomaly && <span className="block text-orange-500 font-bold">ANOMALIA</span>}</td></tr>)})}</tbody></table></div>
-                        </div>
-                    </div>
-                )}
-             </div>
-        )}
-
-        {/* AI, MANAGE, CONFIG - Minimal Changes (retained for structure) */}
-        {activeTab === 'AI' && (
-             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                 {!settings.geminiApiKey ? (<div className="flex flex-col items-center justify-center py-12 text-center"><div className="bg-orange-100 p-4 rounded-full mb-4"><Key className="text-orange-500" size={32}/></div><h3 className="text-xl font-bold text-slate-800 mb-2">Configurazione Richiesta</h3><p className="text-slate-500 max-w-md mb-6">Per utilizzare l'analista AI, è necessario inserire una API Key di Google Gemini valida nelle impostazioni.</p><button onClick={() => {if(isSystem) setActiveTab('CONFIG')}} className="text-blue-600 font-bold hover:underline">Vai alla Configurazione</button></div>) : (
-                 <>
-                    <div className="flex items-center gap-3 mb-6"><div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-2 rounded-lg"><BrainCircuit size={24} /></div><div><h2 className="text-xl font-bold text-slate-800">Analista Aziendale IA</h2><p className="text-slate-500 text-sm">Analisi predittiva e insight sui dati aziendali</p></div></div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">{customPrompts.map((prompt) => (<div key={prompt.id} className="relative group">{editingPromptId === prompt.id ? (<div className="p-3 bg-white border-2 border-blue-500 rounded-lg shadow-lg z-10 absolute top-0 left-0 w-full min-w-[200px]"><input type="text" className="w-full text-xs font-bold mb-2 border-b outline-none" value={tempPromptLabel} onChange={(e) => setTempPromptLabel(e.target.value)} placeholder="Etichetta"/><textarea className="w-full text-xs p-1 border rounded resize-none outline-none mb-2" rows={3} value={tempPromptText} onChange={(e) => setTempPromptText(e.target.value)} placeholder="Domanda per IA..."/><div className="flex justify-end gap-1"><button onClick={() => setEditingPromptId(null)} className="p-1 hover:bg-slate-100 rounded text-slate-500"><X size={14}/></button><button onClick={() => handleSavePrompt(prompt.id)} className="p-1 hover:bg-green-100 text-green-600 rounded"><Save size={14}/></button></div></div>) : (<button onClick={() => handleAskAI(prompt.prompt)} className="w-full p-3 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 border border-slate-200 rounded-lg text-left transition relative h-full flex flex-col justify-between group-hover:shadow-md"><span className="text-sm font-semibold text-slate-700 block mb-1">{prompt.label}</span><span className="text-xs text-slate-400 line-clamp-2">{prompt.prompt}</span><div onClick={(e) => { e.stopPropagation(); setEditingPromptId(prompt.id); setTempPromptLabel(prompt.label); setTempPromptText(prompt.prompt); }} className="absolute top-2 right-2 p-1 text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition"><Pencil size={12} /></div></button>)}</div>))}</div>
-                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 min-h-[200px] mb-4 shadow-inner">{aiResponse ? (<div className="prose prose-sm max-w-none text-slate-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }} />) : (<div className="text-center text-slate-400 py-16 flex flex-col items-center gap-3">{isLoadingAi ? <Loader2 className="animate-spin text-blue-500" size={32}/> : <div className="flex flex-col items-center"><BrainCircuit size={48} className="text-slate-300 mb-2"/><span>Seleziona una domanda rapida o scrivi la tua richiesta qui sotto.</span></div>}</div>)}</div>
-                    <div className="flex gap-2 relative"><input type="text" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="Fai una domanda libera sui tuoi dati..." className="flex-1 border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none pl-12 shadow-sm"/><div className="absolute left-4 top-3.5 text-slate-400"><Info size={20}/></div><button onClick={() => handleAskAI()} disabled={!aiPrompt || isLoadingAi} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 shadow-sm">{isLoadingAi ? 'Analisi...' : 'Chiedi'}</button></div>
-                 </>)}
-            </div>
-        )}
-
         {activeTab === 'MANAGE' && (
             <div className="space-y-6">
                 <div className="flex gap-4 mb-6"><button onClick={() => setManageSubTab('JOBS')} className={`px-4 py-2 rounded-lg font-medium transition ${manageSubTab === 'JOBS' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>Gestione Commesse</button>{(canManageEmployees || isSystem) && <button onClick={() => setManageSubTab('EMPLOYEES')} className={`px-4 py-2 rounded-lg font-medium transition ${manageSubTab === 'EMPLOYEES' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>Gestione Dipendenti</button>}</div>
                 {manageSubTab === 'JOBS' && (
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                        <div className="flex justify-between items-center mb-6 flex-wrap gap-4"><h2 className="text-xl font-bold text-slate-800">Elenco Commesse</h2><div className="flex gap-2"><input type="file" accept=".xlsx, .xls, .xml" onChange={handleExcelImport} className="hidden" ref={fileInputRef} />{(isGodMode) && <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"><FileSpreadsheet size={18} /> Importa/Aggiorna</button>}{(isGodMode) && <button onClick={() => handleExcelExportJobs(sortedManageJobs)} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition"><Download size={18} /> Export</button>}{(isSystem) && <button onClick={handleResetJobs} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"><Eraser size={18} /> Svuota Archivio Commesse</button>}<button onClick={() => setIsEditingJob({})} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"><Plus size={18} /> Nuova</button></div></div>
-                        {isEditingJob && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="bg-white p-6 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">{isEditingJob.id ? 'Modifica Commessa' : 'Nuova Commessa'}</h3><button onClick={() => setIsEditingJob(null)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div>
-                                    <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700">Codice</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.code || ''} onChange={e => setIsEditingJob({...isEditingJob, code: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-700">Cliente</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.clientName || ''} onChange={e => setIsEditingJob({...isEditingJob, clientName: e.target.value})} /></div><div className="col-span-2"><label className="block text-sm font-medium text-slate-700">Descrizione</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.description || ''} onChange={e => setIsEditingJob({...isEditingJob, description: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-700">Budget Ore</label><input type="number" className="w-full border p-2 rounded" value={isEditingJob.budgetHours || ''} onChange={e => setIsEditingJob({...isEditingJob, budgetHours: parseFloat(e.target.value)})} /></div><div><label className="block text-sm font-medium text-slate-700">Valore (€)</label><input type="number" className="w-full border p-2 rounded" value={isEditingJob.budgetValue || ''} onChange={e => setIsEditingJob({...isEditingJob, budgetValue: parseFloat(e.target.value)})} /></div><div><label className="block text-sm font-medium text-slate-700">Scadenza</label><input type="date" className="w-full border p-2 rounded" value={isEditingJob.deadline || ''} onChange={e => setIsEditingJob({...isEditingJob, deadline: e.target.value})} /></div>
+                        <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+                            <h2 className="text-xl font-bold text-slate-800">Elenco Commesse</h2>
+                            
+                            <div className="flex items-center gap-4">
+                                {/* Search in Manage */}
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Cerca Commessa o Cliente..." 
+                                        value={globalSearchTerm}
+                                        onChange={(e) => setGlobalSearchTerm(e.target.value)}
+                                        className="pl-9 pr-4 py-1.5 border border-slate-300 rounded-lg text-sm w-64 focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                    <Search className="absolute left-3 top-2 text-slate-400" size={16}/>
+                                </div>
+
+                                {/* Archive Selector */}
+                                <select 
+                                    value={viewArchiveYear} 
+                                    onChange={(e) => setViewArchiveYear(e.target.value)}
+                                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="active">Visualizza: Attive</option>
+                                    {availableArchiveYears.map(year => (
+                                        <option key={year} value={year.toString()}>Archivio {year}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <input type="file" accept=".xlsx, .xls, .xml" onChange={handleExcelImport} className="hidden" ref={fileInputRef} />
+                                {(isGodMode) && <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"><FileSpreadsheet size={18} /> Importa</button>}
+                                {(isGodMode) && <button onClick={() => handleExcelExportJobs(sortedManageJobs)} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition"><Download size={18} /> Export</button>}
+                                {(isSystem) && <button onClick={handleResetJobs} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"><Eraser size={18} /> Svuota</button>}
+                                <button onClick={() => { setIsEditingJob({}); setClientSearchTerm(''); }} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"><Plus size={18} /> Nuova</button>
+                            </div>
+                        </div>
+                        {isEditingJob && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                                <div className="bg-white p-6 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+                                    <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">{isEditingJob.id ? 'Modifica Commessa' : 'Nuova Commessa'}</h3><button onClick={() => setIsEditingJob(null)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div><label className="block text-sm font-medium text-slate-700">Codice</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.code || ''} onChange={e => setIsEditingJob({...isEditingJob, code: e.target.value})} /></div>
+                                        
+                                        {/* Smart Client Selection */}
+                                        <div className="relative">
+                                            <label className="block text-sm font-medium text-slate-700">Cliente</label>
+                                            <input 
+                                                type="text" 
+                                                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" 
+                                                value={isEditingJob.clientName || clientSearchTerm} 
+                                                onChange={e => {
+                                                    setClientSearchTerm(e.target.value);
+                                                    setIsEditingJob({...isEditingJob, clientName: e.target.value});
+                                                    setShowClientSuggestions(true);
+                                                }}
+                                                onFocus={() => setShowClientSuggestions(true)}
+                                                onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)} // Delay to allow click
+                                                placeholder="Cerca o inserisci nuovo..."
+                                            />
+                                            {showClientSuggestions && (isEditingJob.clientName || clientSearchTerm) && (
+                                                <ul className="absolute z-10 w-full bg-white border border-slate-200 rounded-b-lg shadow-lg max-h-40 overflow-y-auto mt-1">
+                                                    {uniqueClients.filter(c => c.toLowerCase().includes((isEditingJob.clientName || clientSearchTerm).toLowerCase())).map(client => (
+                                                        <li 
+                                                            key={client} 
+                                                            className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm"
+                                                            onClick={() => {
+                                                                setIsEditingJob({...isEditingJob, clientName: client});
+                                                                setClientSearchTerm(client);
+                                                                setShowClientSuggestions(false);
+                                                            }}
+                                                        >
+                                                            {client}
+                                                        </li>
+                                                    ))}
+                                                    {uniqueClients.filter(c => c.toLowerCase().includes((isEditingJob.clientName || clientSearchTerm).toLowerCase())).length === 0 && (
+                                                        <li className="px-3 py-2 text-slate-400 text-xs italic">Nessun cliente esistente trovato. Sarà creato nuovo.</li>
+                                                    )}
+                                                </ul>
+                                            )}
+                                        </div>
+
+                                        <div className="col-span-2"><label className="block text-sm font-medium text-slate-700">Descrizione</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.description || ''} onChange={e => setIsEditingJob({...isEditingJob, description: e.target.value})} /></div>
+                                        <div><label className="block text-sm font-medium text-slate-700">Budget Ore</label><input type="number" className="w-full border p-2 rounded" value={isEditingJob.budgetHours || ''} onChange={e => setIsEditingJob({...isEditingJob, budgetHours: parseFloat(e.target.value)})} /></div>
+                                        <div><label className="block text-sm font-medium text-slate-700">Valore (€)</label><input type="number" className="w-full border p-2 rounded" value={isEditingJob.budgetValue || ''} onChange={e => setIsEditingJob({...isEditingJob, budgetValue: parseFloat(e.target.value)})} /></div>
+                                        <div><label className="block text-sm font-medium text-slate-700">Scadenza</label><input type="date" className="w-full border p-2 rounded" value={isEditingJob.deadline || ''} onChange={e => setIsEditingJob({...isEditingJob, deadline: e.target.value})} /></div>
                                         <div><label className="block text-sm font-medium text-slate-700">Data Inizio</label><input type="date" className="w-full border p-2 rounded" value={isEditingJob.creationDate || new Date().toISOString().split('T')[0]} onChange={e => setIsEditingJob({...isEditingJob, creationDate: e.target.value})} /></div>
                                         <div><label className="block text-sm font-medium text-slate-700">Priorità</label><div className="flex gap-1 mt-2">{[1,2,3,4,5].map(star => (<Star key={star} size={24} className={`cursor-pointer ${star <= (isEditingJob.priority || 3) ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} onClick={() => setIsEditingJob({...isEditingJob, priority: star})}/>))}</div></div>
-                                        <div><label className="block text-sm font-medium text-slate-700 mb-1">Assegna a Operatore</label><select className="w-full border p-2 rounded" value={isEditingJob.suggestedOperatorId || ''} onChange={e => setIsEditingJob({...isEditingJob, suggestedOperatorId: e.target.value})}><option value="">Nessuno</option>{employees.filter(e => e.role === Role.WORKSHOP).map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select></div><div className="col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Note Interne</label><textarea className="w-full border p-2 rounded resize-y min-h-[80px]" value={isEditingJob.notes || ''} onChange={e => setIsEditingJob({...isEditingJob, notes: e.target.value})} placeholder="Eventuali note tecniche o amministrative..."/></div></div>
-                                    <div className="mt-6 flex justify-end gap-2"><button onClick={() => setIsEditingJob(null)} className="px-4 py-2 border rounded hover:bg-slate-50">Annulla</button><button onClick={handleSaveJobForm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva</button></div></div></div>)}
-                        <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th onClick={() => requestSort('code', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Codice {renderSortArrow('code', manageJobSort)}</th><th onClick={() => requestSort('clientName', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Cliente {renderSortArrow('clientName', manageJobSort)}</th><th onClick={() => requestSort('priority', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Priorità {renderSortArrow('priority', manageJobSort)}</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Data Inizio</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Budget/Valore</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Stato</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{sortedManageJobs.map((job) => (<tr key={job.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{job.code}</td><td className="px-6 py-4 text-slate-500">{job.clientName}</td><td className="px-6 py-4 text-slate-500 flex gap-1">{Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}</td><td className="px-6 py-4 text-slate-500 text-xs">{job.creationDate ? new Date(job.creationDate).toLocaleDateString('it-IT') : '-'}</td><td className="px-6 py-4 text-slate-500">{job.budgetHours}h / €{job.budgetValue}</td><td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td><td className="px-6 py-4"><button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800"><Edit2 size={18}/></button></td></tr>))}</tbody></table></div>
+                                        <div><label className="block text-sm font-medium text-slate-700 mb-1">Assegna a Operatore</label><select className="w-full border p-2 rounded" value={isEditingJob.suggestedOperatorId || ''} onChange={e => setIsEditingJob({...isEditingJob, suggestedOperatorId: e.target.value})}><option value="">Nessuno</option>{employees.filter(e => e.role === Role.WORKSHOP).map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select></div><div className="col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Note Interne</label><textarea className="w-full border p-2 rounded resize-y min-h-[80px]" value={isEditingJob.notes || ''} onChange={e => setIsEditingJob({...isEditingJob, notes: e.target.value})} placeholder="Eventuali note tecniche o amministrative..."/></div>
+                                    </div>
+                                    <div className="mt-6 flex justify-end gap-2"><button onClick={() => setIsEditingJob(null)} className="px-4 py-2 border rounded hover:bg-slate-50">Annulla</button><button onClick={handleSaveJobForm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva</button></div>
+                                </div>
+                            </div>
+                        )}
+                        <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th onClick={() => requestSort('code', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Codice {renderSortArrow('code', manageJobSort)}</th><th onClick={() => requestSort('clientName', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Cliente {renderSortArrow('clientName', manageJobSort)}</th><th onClick={() => requestSort('priority', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Priorità {renderSortArrow('priority', manageJobSort)}</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Data Inizio</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Budget/Valore</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Stato</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{sortedManageJobs.map((job) => (<tr key={job.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{job.code}</td><td className="px-6 py-4 text-slate-500">{job.clientName}</td><td className="px-6 py-4 text-slate-500 flex gap-1">{Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}</td><td className="px-6 py-4 text-slate-500 text-xs">{job.creationDate ? new Date(job.creationDate).toLocaleDateString('it-IT') : '-'}</td><td className="px-6 py-4 text-slate-500">{job.budgetHours}h / €{job.budgetValue}</td><td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td><td className="px-6 py-4 flex gap-2">
+                            <button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800"><Edit2 size={18}/></button>
+                            {/* Archive Action */}
+                            {!job.isArchived && job.status === JobStatus.COMPLETED && (
+                                <button onClick={() => handleArchiveJob(job)} className="text-slate-400 hover:text-orange-600" title="Archivia"><Archive size={18}/></button>
+                            )}
+                            {job.isArchived && (
+                                <button onClick={() => handleRestoreJob(job)} className="text-orange-600 hover:text-green-600" title="Ripristina da Archivio"><RotateCcw size={18}/></button>
+                            )}
+                        </td></tr>))}
+                        {sortedManageJobs.length === 0 && (
+                            <tr><td colSpan={7} className="text-center py-8 text-slate-400 italic">Nessuna commessa trovata.</td></tr>
+                        )}
+                        </tbody></table></div>
                     </div>
                 )}
                 {manageSubTab === 'EMPLOYEES' && (canManageEmployees || isSystem) && (
