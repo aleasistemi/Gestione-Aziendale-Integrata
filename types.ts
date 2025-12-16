@@ -49,6 +49,9 @@ export interface Job {
   priority: number; // 1-5, default 3
   suggestedOperatorId?: string; // Visual note for assignment
   notes?: string; // Note interne aggiuntive
+  // Archiving
+  isArchived?: boolean;
+  archiveYear?: number;
 }
 
 export interface AttendanceRecord {
