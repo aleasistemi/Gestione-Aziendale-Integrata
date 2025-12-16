@@ -1366,4 +1366,71 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 mb-6"><div><h3 className="font-bold text-slate-800 flex items-center gap-2"><Scan size={20}/> Modalità Badge NFC</h3><p className="text-sm text-slate-500">Se attiva, nasconde la lista operatori e richiede la scansione del badge o PIN.</p></div><button onClick={() => onSaveSettings({ ...settings, nfcEnabled: !settings.nfcEnabled })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.nfcEnabled ? 'bg-blue-600' : 'bg-slate-200'}`}><span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${settings.nfcEnabled ? 'translate-x-6' : 'translate-x-1'}`}/></button></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6"><div><label className="block text-sm font-medium text-slate-700 mb-1">Scatto Straordinari (minuti)</label><input type="number" className="w-full border p-2 rounded" value={settings.overtimeSnapMinutes || 30} onChange={(e) => onSaveSettings({...settings, overtimeSnapMinutes: parseInt(e.target.value)})} /><p className="text-xs text-slate-500 mt-1">Gli straordinari serali verranno conteggiati a blocchi di questi minuti.</p></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Scatto Permessi/Uscita Anticipata (minuti)</label><input type="number" className="w-full border p-2 rounded" value={settings.permessoSnapMinutes || 15} onChange={(e) => onSaveSettings({...settings, permessoSnapMinutes: parseInt(e.target.value)})} /><p className="text-xs text-slate-500 mt-1">L'uscita anticipata verrà dedotta solo al raggiungimento di questo scatto.</p></div></div>
                     <div className="mb-6"><h3 className="font-bold text-slate-800 flex items-center gap-2"><Key size={20}/> Gemini API Key</h3><p className="text-sm text-slate-500 mb-2">Inserisci la chiave API di Google Gemini per abilitare l'AI Analyst.</p><div className="flex gap-2"><input type="password" value={settings.geminiApiKey || ''} onChange={(e) => onSaveSettings({...settings, geminiApiKey: e.target.value})} placeholder="sk-..." className="flex-1 border p-2 rounded"/></div></div>
-                    <div><h3 className="font-bold text-slate-800 mb-4">Gestione Fasi Lavorative</h3><div className="flex gap-2 mb-4"><input type="text" value={newPhaseName} onChange={(e) => setNewPhaseName(e.target.value)} placeholder="Nuova fase..." className="border p-2 rounded flex-1"/><button onClick={addPhase} className="bg-green-600 text-
+                    <div>
+                        <h3 className="font-bold text-slate-800 mb-4">Gestione Fasi Lavorative</h3>
+                        <div className="flex gap-2 mb-4">
+                            <input type="text" value={newPhaseName} onChange={(e) => setNewPhaseName(e.target.value)} placeholder="Nuova fase..." className="border p-2 rounded flex-1"/>
+                            <button onClick={addPhase} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Aggiungi</button>
+                        </div>
+                        <div className="space-y-2">
+                            {settings.workPhases.map(phase => (
+                                <div key={phase} className="flex justify-between items-center p-3 bg-white border rounded shadow-sm">
+                                    <span>{phase}</span>
+                                    <button onClick={() => removePhase(phase)} className="text-red-500 hover:text-red-700"><Trash2 size={18}/></button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+                
+                {/* Permissions Section */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-xl font-bold text-slate-800">Permessi Ruoli</h2>
+                        <button onClick={savePermissions} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">Salva Permessi</button>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead>
+                                <tr className="border-b">
+                                    <th className="text-left py-2">Ruolo</th>
+                                    {allPossibleTabs.map(t => <th key={t.id} className="py-2 text-center text-xs">{t.label}</th>)}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {Object.values(Role).filter(r => r !== Role.SYSTEM_ADMIN).map(role => (
+                                    <tr key={role} className="border-b hover:bg-slate-50">
+                                        <td className="py-3 font-medium">{role}</td>
+                                        {allPossibleTabs.map(tab => (
+                                            <td key={tab.id} className="text-center">
+                                                <input type="checkbox" checked={(tempPermissions[role] || []).includes(tab.id)} onChange={() => togglePermission(role, tab.id)} className="w-4 h-4 text-blue-600 rounded"/>
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Backup Section */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Database className="text-slate-600"/> Backup e Ripristino</h2>
+                    <p className="text-slate-500 mb-6">Esporta un file JSON completo di tutti i dati (Commesse, Dipendenti, Log, Impostazioni) o ripristina un backup precedente.</p>
+                    <div className="flex gap-4">
+                        <button onClick={handleBackupDownload} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-lg hover:bg-slate-900 transition"><Download size={20}/> Scarica Backup Completo</button>
+                        <div className="relative">
+                            <input type="file" ref={backupInputRef} onChange={handleBackupRestore} accept=".json" className="hidden"/>
+                            <button onClick={() => backupInputRef.current?.click()} className="flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition"><Upload size={20}/> Ripristina Backup</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+      </div>
+    </div>
+  );
+};
+
+export default AdminDashboard;
