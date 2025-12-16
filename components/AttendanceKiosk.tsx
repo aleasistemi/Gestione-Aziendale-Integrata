@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, AttendanceRecord, Role } from '../types';
-import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Wifi, AlertCircle } from 'lucide-react';
+import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Wifi, AlertCircle, Play } from 'lucide-react';
 
 interface Props {
   employees: Employee[];
@@ -41,55 +41,42 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
     return () => clearInterval(timer);
   }, []);
 
+  const startNfcScan = async () => {
+      if (nfcEnabled && 'NDEFReader' in window) {
+          try {
+              const ndef = new window.NDEFReader();
+              ndefRef.current = ndef;
+              await ndef.scan();
+              setNfcStatus('LISTENING');
+              console.log("NFC Scan started successfully");
+
+              ndef.onreading = (event: any) => {
+                  const serialNumber = event.serialNumber;
+                  console.log("NFC Read:", serialNumber);
+                  
+                  // Strategy 1: Try Serial Number
+                  const cleanSerial = serialNumber.replaceAll(':', '').toUpperCase();
+                  processScan(cleanSerial);
+              };
+
+              ndef.onreadingerror = () => {
+                  setMessage("Errore lettura NFC. Riprova.");
+              };
+
+          } catch (error) {
+              console.error("NFC Error:", error);
+              setNfcStatus('ERROR');
+          }
+      } else if (!('NDEFReader' in window)) {
+          setNfcStatus('UNSUPPORTED');
+      }
+  };
+
   // --- WEB NFC LOGIC (MOBILE) ---
   useEffect(() => {
-      const startNfcScan = async () => {
-          if (nfcEnabled && 'NDEFReader' in window && !selectedEmp) {
-              try {
-                  const ndef = new window.NDEFReader();
-                  ndefRef.current = ndef;
-                  await ndef.scan();
-                  setNfcStatus('LISTENING');
-                  console.log("NFC Scan started successfully");
-
-                  ndef.onreading = (event: any) => {
-                      const serialNumber = event.serialNumber;
-                      console.log("NFC Read:", serialNumber);
-                      
-                      // Strategy 1: Try Serial Number
-                      // Note: Web NFC serialNumber comes with colons usually (e.g. 04:a5:59...)
-                      const cleanSerial = serialNumber.replaceAll(':', '').toUpperCase();
-                      processScan(cleanSerial);
-
-                      // Strategy 2: Try Text Records (if the user wrote the ID inside the tag)
-                      // const textDecoder = new TextDecoder();
-                      // for (const record of event.message.records) {
-                      //     if (record.recordType === "text") {
-                      //         const text = textDecoder.decode(record.data);
-                      //         processScan(text);
-                      //     }
-                      // }
-                  };
-
-                  ndef.onreadingerror = () => {
-                      setMessage("Errore lettura NFC. Riprova.");
-                  };
-
-              } catch (error) {
-                  console.error("NFC Error:", error);
-                  setNfcStatus('ERROR');
-              }
-          } else if (!('NDEFReader' in window)) {
-              setNfcStatus('UNSUPPORTED');
-          }
-      };
-
-      startNfcScan();
-
-      // Cleanup not strictly necessary for NDEFReader as it stops when tab hidden, but good practice
-      return () => {
-          // NDEFReader doesn't have a stop() method in all implementations, relies on page visibility
-      };
+      if(nfcEnabled && !selectedEmp) {
+          startNfcScan();
+      }
   }, [nfcEnabled, selectedEmp]);
 
 
@@ -110,7 +97,7 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
       if (code.length < 2) return;
       
       const cleanCode = code.trim().toUpperCase();
-      console.log("Checking code:", cleanCode); // Debug
+      console.log("Checking code:", cleanCode); 
       
       const emp = employees.find(e => 
           (e.nfcCode && e.nfcCode.trim().toUpperCase() === cleanCode) ||
@@ -120,7 +107,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
       if (emp) {
           setSelectedEmp(emp);
           setScanValue('');
-          // Visual Feedback for Mobile
           if (navigator.vibrate) navigator.vibrate(200);
       } else {
           setMessage(`Badge non riconosciuto: ${cleanCode}`);
@@ -257,10 +243,17 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
                           {nfcStatus === 'LISTENING' ? 'NFC Attivo (Appoggia Badge)' : 'Lettore USB Pronto'}
                       </span>
                   </div>
+                  
+                  {/* Explicit Start Button if failed */}
+                  {nfcStatus !== 'LISTENING' && nfcStatus !== 'UNSUPPORTED' && (
+                      <button onClick={startNfcScan} className="mb-6 flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-full font-bold shadow-lg hover:bg-blue-700 transition">
+                          <Play size={16}/> ATTIVA LETTORE NFC
+                      </button>
+                  )}
 
                   {nfcStatus === 'ERROR' && (
-                      <div className="mb-4 text-xs text-red-500 flex items-center gap-1">
-                          <AlertCircle size={12}/> Errore accesso NFC Mobile. Verifica permessi Chrome.
+                      <div className="mb-4 text-xs text-red-500 flex items-center gap-1 text-center max-w-xs">
+                          <AlertCircle size={12}/> Errore accesso NFC Mobile. Clicca "Attiva" o usa il PIN.
                       </div>
                   )}
 

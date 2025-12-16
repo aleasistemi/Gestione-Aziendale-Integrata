@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, Vehicle, VehicleLog, Role } from '../types';
-import { Clock, Truck, User, ArrowLeft, KeyRound, Wifi, Delete, CheckCircle, X, LogOut, ArrowRightCircle, AlertCircle } from 'lucide-react';
+import { Clock, Truck, User, ArrowLeft, KeyRound, Wifi, Delete, CheckCircle, X, LogOut, ArrowRightCircle, AlertCircle, Play } from 'lucide-react';
 
 interface Props {
   employees: Employee[];
@@ -40,36 +40,38 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
     return () => clearInterval(timer);
   }, []);
 
+  const startNfcScan = async () => {
+      if (nfcEnabled && 'NDEFReader' in window && !currentUser) {
+          try {
+              const ndef = new window.NDEFReader();
+              await ndef.scan();
+              setNfcStatus('LISTENING');
+
+              ndef.onreading = (event: any) => {
+                  const serialNumber = event.serialNumber;
+                  console.log("NFC Read:", serialNumber);
+                  const cleanSerial = serialNumber.replaceAll(':', '').toUpperCase();
+                  processScan(cleanSerial);
+              };
+
+              ndef.onreadingerror = () => {
+                  setMessage("Errore lettura NFC. Riprova.");
+              };
+
+          } catch (error) {
+              console.error("NFC Error:", error);
+              setNfcStatus('ERROR');
+          }
+      } else if (!('NDEFReader' in window)) {
+          setNfcStatus('UNSUPPORTED');
+      }
+  };
+
   // --- WEB NFC LOGIC (MOBILE) ---
   useEffect(() => {
-      const startNfcScan = async () => {
-          if (nfcEnabled && 'NDEFReader' in window && !currentUser) {
-              try {
-                  const ndef = new window.NDEFReader();
-                  await ndef.scan();
-                  setNfcStatus('LISTENING');
-
-                  ndef.onreading = (event: any) => {
-                      const serialNumber = event.serialNumber;
-                      console.log("NFC Read:", serialNumber);
-                      const cleanSerial = serialNumber.replaceAll(':', '').toUpperCase();
-                      processScan(cleanSerial);
-                  };
-
-                  ndef.onreadingerror = () => {
-                      setMessage("Errore lettura NFC. Riprova.");
-                  };
-
-              } catch (error) {
-                  console.error("NFC Error:", error);
-                  setNfcStatus('ERROR');
-              }
-          } else if (!('NDEFReader' in window)) {
-              setNfcStatus('UNSUPPORTED');
-          }
-      };
-
-      startNfcScan();
+      if (nfcEnabled && !currentUser) {
+          startNfcScan();
+      }
       return () => {};
   }, [nfcEnabled, currentUser]);
 
@@ -222,6 +224,13 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
                           {nfcStatus === 'LISTENING' ? 'NFC Attivo (Appoggia Badge)' : 'Lettore USB Pronto'}
                       </span>
                   </div>
+
+                  {/* Explicit Start Button if failed */}
+                  {nfcStatus !== 'LISTENING' && nfcStatus !== 'UNSUPPORTED' && (
+                      <button onClick={startNfcScan} className="mb-6 flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-full font-bold shadow-lg hover:bg-blue-700 transition">
+                          <Play size={16}/> ATTIVA LETTORE NFC
+                      </button>
+                  )}
 
                    {nfcStatus === 'ERROR' && (
                       <div className="mb-4 text-xs text-red-400 flex items-center gap-1">
