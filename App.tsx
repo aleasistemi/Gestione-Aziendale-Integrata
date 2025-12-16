@@ -6,7 +6,7 @@ import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
 import VehicleKiosk from './components/VehicleKiosk';
 import { AdminDashboard } from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Settings, Wifi, Truck, Play, AlertCircle } from 'lucide-react';
+import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Settings, Wifi, Truck, Play, AlertCircle, Laptop } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -114,14 +114,15 @@ function App() {
               setNfcStatus('ERROR');
           }
       } else if (!hasNfcSupport) {
-          setNfcStatus('UNSUPPORTED');
+          // If no Native NFC (PC), we assume USB Reader is always "Listening" via keyboard input
+          setNfcStatus('UNSUPPORTED'); 
       }
   };
 
-  // Force focus on login scanner input
+  // Force focus on login scanner input (Works for both Mobile hidden input and PC USB Reader)
   useEffect(() => {
     if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskMenu) {
-         startNfcScan(); // Attempt auto-start
+         startNfcScan(); // Attempt auto-start for mobile
          
          const focusInterval = setInterval(() => {
               if (document.activeElement !== loginInputRef.current) {
@@ -434,8 +435,8 @@ function App() {
             
             <div className="pt-2">
               
-              {/* Only show NFC UI if enabled settings AND browser supports Web NFC (Mobile) */}
-              {settings.nfcEnabled && hasNfcSupport ? (
+              {/* Show NFC UI if enabled settings (Both Mobile and PC USB) */}
+              {settings.nfcEnabled ? (
                    <div className="flex flex-col items-center py-4 w-full relative">
                       <input 
                           ref={loginInputRef}
@@ -454,16 +455,22 @@ function App() {
                           <div className="relative z-10 bg-white p-6 rounded-full shadow-lg border-2 border-blue-100">
                              <Scan size={48} className="text-blue-600" />
                           </div>
-                          <div className={`absolute bottom-0 px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 shadow-sm ${nfcStatus === 'LISTENING' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                             <div className={`w-2 h-2 rounded-full animate-pulse ${nfcStatus === 'LISTENING' ? 'bg-green-500' : 'bg-slate-400'}`}></div>
-                             {nfcStatus === 'LISTENING' ? 'Lettore Attivo' : 'Tocca per Attivare'}
+                          <div className={`absolute bottom-0 px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 shadow-sm ${nfcStatus === 'LISTENING' || nfcStatus === 'UNSUPPORTED' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                             <div className={`w-2 h-2 rounded-full animate-pulse ${nfcStatus === 'LISTENING' || nfcStatus === 'UNSUPPORTED' ? 'bg-green-500' : 'bg-slate-400'}`}></div>
+                             {nfcStatus === 'LISTENING' ? 'Lettore Mobile Attivo' : nfcStatus === 'UNSUPPORTED' ? 'Lettore USB Pronto' : 'Tocca per Attivare'}
                           </div>
                       </div>
                       
-                      <p className="text-slate-500 font-medium mb-2 mt-2">Avvicina il Badge al retro del telefono</p>
+                      {hasNfcSupport ? (
+                          <p className="text-slate-500 font-medium mb-2 mt-2">Avvicina il Badge al retro del telefono</p>
+                      ) : (
+                          <div className="flex items-center gap-2 text-slate-500 font-medium mb-2 mt-2">
+                              <Laptop size={16}/> <span>Usa il lettore USB da PC</span>
+                          </div>
+                      )}
                       
-                       {/* Explicit Start Button if failed */}
-                      {nfcStatus !== 'LISTENING' && nfcStatus !== 'UNSUPPORTED' && (
+                       {/* Explicit Start Button if failed (Mobile Only) */}
+                      {nfcStatus !== 'LISTENING' && hasNfcSupport && (
                           <button onClick={startNfcScan} className="mb-4 flex items-center gap-2 bg-blue-600 text-white px-4 py-1.5 rounded-full font-bold shadow hover:bg-blue-700 transition text-sm">
                               <Play size={14}/> ATTIVA LETTORE
                           </button>
@@ -481,7 +488,7 @@ function App() {
                       </button>
                    </div>
               ) : (
-                /* PC VIEW or NFC Disabled: Show List of Users */
+                /* Disabled NFC: Show List of Users */
                 <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
                     {employees.map(emp => (
                     <button 
