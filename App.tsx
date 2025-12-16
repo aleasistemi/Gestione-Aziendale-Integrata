@@ -104,9 +104,27 @@ function App() {
               setNfcStatus('LISTENING');
 
               ndef.onreading = (event: any) => {
-                  const serialNumber = event.serialNumber;
-                  const cleanSerial = serialNumber.replaceAll(':', '').toUpperCase();
-                  processLoginScan(cleanSerial);
+                  let readCode = "";
+                  
+                  // 1. Try reading Text Record (Mobile Written)
+                  const message = event.message;
+                  for (const record of message.records) {
+                    if (record.recordType === "text") {
+                        const textDecoder = new TextDecoder(record.encoding);
+                        readCode = textDecoder.decode(record.data);
+                        console.log("Read from NDEF Text:", readCode);
+                        break;
+                    }
+                  }
+
+                  // 2. Fallback to Serial Number (PC Mode / Raw Tag)
+                  if (!readCode) {
+                      const serialNumber = event.serialNumber;
+                      readCode = serialNumber.replaceAll(':', '').toUpperCase();
+                      console.log("Read from Serial:", readCode);
+                  }
+
+                  processLoginScan(readCode);
               };
 
           } catch (error) {
@@ -139,7 +157,8 @@ function App() {
       
       const emp = employees.find(e => 
           (e.nfcCode && e.nfcCode.trim().toUpperCase() === cleanCode) ||
-          (e.nfcCode2 && e.nfcCode2.trim().toUpperCase() === cleanCode)
+          (e.nfcCode2 && e.nfcCode2.trim().toUpperCase() === cleanCode) ||
+          (e.id && e.id.trim().toUpperCase() === cleanCode) // Fallback to ID match
       );
       
       if (emp) {
