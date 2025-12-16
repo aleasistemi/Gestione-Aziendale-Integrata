@@ -1,5 +1,5 @@
 
-import { AppDatabase, Employee, Job, WorkLog, AttendanceRecord, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings } from '../types';
+import { AppDatabase, Employee, Job, WorkLog, AttendanceRecord, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, Vehicle, VehicleLog } from '../types';
 import { MOCK_EMPLOYEES, MOCK_JOBS, MOCK_LOGS, MOCK_ATTENDANCE } from '../constants';
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, writeBatch, query, where } from "firebase/firestore";
@@ -32,9 +32,9 @@ const DEFAULT_AI_PROMPTS: AIQuickPrompt[] = [
 ];
 
 const DEFAULT_PERMISSIONS: RolePermissions = {
-  [Role.SYSTEM_ADMIN]: ['OVERVIEW', 'JOBS', 'HR', 'AI', 'MANAGE', 'CONFIG'],
-  [Role.DIRECTION]: ['OVERVIEW', 'JOBS', 'HR', 'AI', 'MANAGE'],
-  [Role.ADMIN]: ['HR'],
+  [Role.SYSTEM_ADMIN]: ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE', 'CONFIG'],
+  [Role.DIRECTION]: ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE'],
+  [Role.ADMIN]: ['HR', 'FLEET'],
   [Role.ACCOUNTING]: ['HR'],
   [Role.SALES]: ['OVERVIEW', 'JOBS', 'MANAGE'],
   [Role.TECHNICAL]: ['OVERVIEW', 'JOBS', 'MANAGE'],
@@ -66,6 +66,8 @@ const SEED_DATA: AppDatabase = {
   jobs: MOCK_JOBS,
   logs: MOCK_LOGS, 
   attendance: MOCK_ATTENDANCE,
+  vehicles: [],
+  vehicleLogs: [],
   justifications: [],
   customPrompts: DEFAULT_AI_PROMPTS,
   permissions: DEFAULT_PERMISSIONS,
@@ -103,7 +105,7 @@ class DatabaseService {
     await this.seedDatabaseIfNeeded();
 
     try {
-        const [empSnap, jobSnap, logSnap, attSnap, justSnap, promptSnap, permSnap, setSnap] = await Promise.all([
+        const [empSnap, jobSnap, logSnap, attSnap, justSnap, promptSnap, permSnap, setSnap, vehSnap, vehLogSnap] = await Promise.all([
             getDocs(collection(db, 'employees')),
             getDocs(collection(db, 'jobs')),
             getDocs(collection(db, 'logs')),
@@ -111,7 +113,9 @@ class DatabaseService {
             getDocs(collection(db, 'justifications')),
             getDocs(collection(db, 'customPrompts')),
             getDocs(collection(db, 'permissions')),
-            getDocs(collection(db, 'settings'))
+            getDocs(collection(db, 'settings')),
+            getDocs(collection(db, 'vehicles')),
+            getDocs(collection(db, 'vehicleLogs'))
         ]);
 
         const employees = empSnap.docs.map(d => d.data() as Employee);
@@ -120,6 +124,8 @@ class DatabaseService {
         const attendance = attSnap.docs.map(d => d.data() as AttendanceRecord);
         const justifications = justSnap.docs.map(d => d.data() as DayJustification);
         const customPrompts = promptSnap.docs.map(d => d.data() as AIQuickPrompt);
+        const vehicles = vehSnap.docs.map(d => d.data() as Vehicle);
+        const vehicleLogs = vehLogSnap.docs.map(d => d.data() as VehicleLog);
         
         // Gestione documenti singoli (Settings / Permissions)
         const permDoc = permSnap.docs.find(d => d.id === 'roles');
@@ -148,7 +154,9 @@ class DatabaseService {
             justifications,
             customPrompts: finalPrompts,
             permissions,
-            settings
+            settings,
+            vehicles,
+            vehicleLogs
         };
     } catch (e) {
         console.error("Errore recupero dati da Firebase:", e);
@@ -157,8 +165,9 @@ class DatabaseService {
     }
   }
 
+  // --- STANDARD OPERATIONS ---
   async saveWorkLog(log: WorkLog): Promise<void> {
-    const cleanLog = JSON.parse(JSON.stringify(log)); // Sanitize undefined
+    const cleanLog = JSON.parse(JSON.stringify(log)); 
     await setDoc(doc(db, 'logs', log.id), cleanLog);
   }
 
@@ -206,8 +215,23 @@ class DatabaseService {
       await setDoc(doc(db, 'settings', 'global'), settings);
   }
 
+  // --- VEHICLE OPERATIONS ---
+  async saveVehicle(vehicle: Vehicle): Promise<void> {
+      const cleanVehicle = JSON.parse(JSON.stringify(vehicle));
+      await setDoc(doc(db, 'vehicles', vehicle.id), cleanVehicle);
+  }
+
+  async deleteVehicle(vehicleId: string): Promise<void> {
+      await deleteDoc(doc(db, 'vehicles', vehicleId));
+  }
+
+  async saveVehicleLog(log: VehicleLog): Promise<void> {
+      const cleanLog = JSON.parse(JSON.stringify(log));
+      await setDoc(doc(db, 'vehicleLogs', log.id), cleanLog);
+  }
+
+  // --- BULK OPERATIONS ---
   async bulkImport(newJobs: Job[], newLogs: WorkLog[], newEmployees: Employee[]): Promise<void> {
-      // 1. Sanitize Data (remove undefined) by using JSON cycle or manual cleanup
       const sanitize = (obj: any) => {
           const newObj = { ...obj };
           Object.keys(newObj).forEach(key => {
@@ -216,15 +240,13 @@ class DatabaseService {
           return newObj;
       };
 
-      // 2. Prepare Operations
       const allOperations = [
           ...newEmployees.map(e => ({ type: 'employee', ref: doc(db, 'employees', e.id), data: sanitize(e) })),
           ...newJobs.map(j => ({ type: 'job', ref: doc(db, 'jobs', j.id), data: sanitize(j) })),
           ...newLogs.map(l => ({ type: 'log', ref: doc(db, 'logs', l.id), data: sanitize(l) }))
       ];
 
-      // 3. Batching (Firestore limit 500 operations per batch)
-      const BATCH_SIZE = 450; // Safety margin
+      const BATCH_SIZE = 450; 
       
       console.log(`Starting Bulk Import: ${allOperations.length} operations`);
 
@@ -241,18 +263,16 @@ class DatabaseService {
               await batch.commit();
           } catch (e) {
               console.error("Batch commit failed:", e);
-              throw e; // Propagate error to UI
+              throw e;
           }
       }
   }
 
-  // NUOVA FUNZIONE: Cancella tutte le commesse e i log
   async resetJobsAndLogs(): Promise<void> {
       try {
           const jobsSnap = await getDocs(collection(db, 'jobs'));
           const logsSnap = await getDocs(collection(db, 'logs'));
           
-          // Must verify batch limits for delete as well
           const allDocs = [...jobsSnap.docs, ...logsSnap.docs];
           const BATCH_SIZE = 450;
 
@@ -289,6 +309,10 @@ class DatabaseService {
       (data.attendance || []).forEach((a: AttendanceRecord) => batch.set(doc(db, 'attendance', a.id), a));
       (data.justifications || []).forEach((j: DayJustification) => batch.set(doc(db, 'justifications', j.id), j));
       
+      // Vehicles restore
+      (data.vehicles || []).forEach((v: Vehicle) => batch.set(doc(db, 'vehicles', v.id), v));
+      (data.vehicleLogs || []).forEach((l: VehicleLog) => batch.set(doc(db, 'vehicleLogs', l.id), l));
+
       await batch.commit();
 
       return true;
