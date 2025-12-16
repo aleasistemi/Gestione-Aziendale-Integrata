@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, Vehicle, VehicleLog, Role } from '../types';
-import { Clock, Truck, User, ArrowLeft, KeyRound, Wifi, Delete, CheckCircle, X, LogOut, ArrowRightCircle } from 'lucide-react';
+import { Clock, Truck, User, ArrowLeft, KeyRound, Wifi, Delete, CheckCircle, X, LogOut, ArrowRightCircle, AlertCircle } from 'lucide-react';
 
 interface Props {
   employees: Employee[];
@@ -16,9 +16,12 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [message, setMessage] = useState<string | null>(null);
   
-  // Scanner Input State
+  // Scanner Input State (Legacy)
   const [scanValue, setScanValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Web NFC State
+  const [nfcStatus, setNfcStatus] = useState<'IDLE' | 'LISTENING' | 'ERROR' | 'UNSUPPORTED'>('IDLE');
 
   const [showPinPad, setShowPinPad] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
@@ -37,7 +40,40 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
     return () => clearInterval(timer);
   }, []);
 
-  // Force focus on the scanner input
+  // --- WEB NFC LOGIC (MOBILE) ---
+  useEffect(() => {
+      const startNfcScan = async () => {
+          if (nfcEnabled && 'NDEFReader' in window && !currentUser) {
+              try {
+                  const ndef = new window.NDEFReader();
+                  await ndef.scan();
+                  setNfcStatus('LISTENING');
+
+                  ndef.onreading = (event: any) => {
+                      const serialNumber = event.serialNumber;
+                      console.log("NFC Read:", serialNumber);
+                      const cleanSerial = serialNumber.replaceAll(':', '').toUpperCase();
+                      processScan(cleanSerial);
+                  };
+
+                  ndef.onreadingerror = () => {
+                      setMessage("Errore lettura NFC. Riprova.");
+                  };
+
+              } catch (error) {
+                  console.error("NFC Error:", error);
+                  setNfcStatus('ERROR');
+              }
+          } else if (!('NDEFReader' in window)) {
+              setNfcStatus('UNSUPPORTED');
+          }
+      };
+
+      startNfcScan();
+      return () => {};
+  }, [nfcEnabled, currentUser]);
+
+  // --- USB LOGIC ---
   useEffect(() => {
       if (nfcEnabled && !showPinPad && !showExitPinPad && !currentUser) {
           const focusInterval = setInterval(() => {
@@ -61,8 +97,9 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
       if (emp) {
           setCurrentUser(emp);
           setScanValue('');
+          if (navigator.vibrate) navigator.vibrate(200);
       } else {
-          setMessage(`Badge non riconosciuto`);
+          setMessage(`Badge non riconosciuto: ${cleanCode}`);
           setScanValue('');
           setTimeout(() => setMessage(null), 3000);
       }
@@ -179,7 +216,18 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
                        </div>
                   </div>
                   
-                  <p className="text-slate-400 mb-8 font-medium">Avvicina il Badge per Identificarti</p>
+                  <div className={`flex items-center justify-center gap-3 mb-8 px-6 py-2 rounded-full shadow-inner border border-slate-700 transition-colors ${nfcStatus === 'LISTENING' ? 'bg-green-900/30' : 'bg-slate-800'}`}>
+                      <div className={`w-3 h-3 rounded-full animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)] ${nfcStatus === 'LISTENING' ? 'bg-green-500' : 'bg-slate-500'}`}></div>
+                      <span className="text-slate-300 font-bold uppercase tracking-wider text-sm">
+                          {nfcStatus === 'LISTENING' ? 'NFC Attivo (Appoggia Badge)' : 'Lettore USB Pronto'}
+                      </span>
+                  </div>
+
+                   {nfcStatus === 'ERROR' && (
+                      <div className="mb-4 text-xs text-red-400 flex items-center gap-1">
+                          <AlertCircle size={12}/> Errore accesso NFC Mobile. Verifica permessi Chrome.
+                      </div>
+                  )}
 
                   <button 
                     onClick={() => setShowPinPad(true)}
