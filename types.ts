@@ -45,6 +45,7 @@ export interface Job {
   budgetHours: number;
   budgetValue: number; // Valore commessa
   deadline: string;
+  creationDate?: string; // Data inizio/creazione commessa
   priority: number; // 1-5, default 3
   suggestedOperatorId?: string; // Visual note for assignment
   notes?: string; // Note interne aggiuntive
