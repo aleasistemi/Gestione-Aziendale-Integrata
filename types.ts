@@ -142,3 +142,38 @@ export interface AppDatabase {
   permissions: RolePermissions;
   settings: GlobalSettings;
 }
+
+// --- WEB NFC TYPES ---
+export interface NDEFRecord {
+  recordType: string;
+  mediaType?: string;
+  id?: string;
+  data?: DataView;
+  encoding?: string;
+  lang?: string;
+  toRecords?: () => NDEFRecord[];
+}
+
+export interface NDEFMessage {
+  records: NDEFRecord[];
+}
+
+export interface NDEFReadingEvent extends Event {
+  serialNumber: string;
+  message: NDEFMessage;
+}
+
+export interface NDEFReader {
+  scan: () => Promise<void>;
+  onreading: ((this: NDEFReader, event: NDEFReadingEvent) => any) | null;
+  onreadingerror: ((this: NDEFReader, event: Event) => any) | null;
+}
+
+// Extend Window interface
+declare global {
+  interface Window {
+    NDEFReader: {
+      new (): NDEFReader;
+    };
+  }
+}
