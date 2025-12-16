@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings, Vehicle, VehicleLog } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer, Search, Archive, RotateCcw, Truck, MapPin, User } from 'lucide-react';
+import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer, Search, Archive, RotateCcw, Truck, MapPin, User, ChevronLeft, ChevronRight } from 'lucide-react';
 import { analyzeBusinessData } from '../services/geminiService';
 import { read, utils, writeFile } from 'xlsx';
 import { dbService } from '../services/db';
@@ -143,6 +143,10 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
 
   const [isEditingVehicle, setIsEditingVehicle] = useState<Partial<Vehicle> | null>(null);
+  
+  // Fleet Calendar State
+  const [fleetCurrentMonth, setFleetCurrentMonth] = useState(new Date());
+  const [fleetSelectedDate, setFleetSelectedDate] = useState<string | null>(null);
 
   useEffect(() => {
      if (availableTabs.length > 0 && !availableTabs.find(t => t.id === activeTab)) {
@@ -842,6 +846,13 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   
   const payrollStats = useMemo(() => getPayrollData(), [employees, attendance, justifications, selectedMonth]);
 
+  // --- CALENDAR LOGIC (MINI) ---
+  const getDaysInMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  const getFirstDayOfMonth = (date: Date) => {
+      const day = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+      return day === 0 ? 6 : day - 1; // Adjust for Monday start
+  };
+
   const handleExportSummary = () => {
       const data = payrollStats.map(stat => ({
           'Dipendente': stat.name,
@@ -1176,25 +1187,90 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                         </div>
                     </div>
 
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-h-[600px] overflow-y-auto">
-                        <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Clock className="text-slate-600"/> Registro Storico</h2>
-                        <div className="space-y-4">
-                            {vehicleLogs.sort((a,b) => new Date(b.timestampOut).getTime() - new Date(a.timestampOut).getTime()).map(log => {
-                                const v = vehicles.find(v => v.id === log.vehicleId);
-                                const e = employees.find(e => e.id === log.employeeId);
-                                return (
-                                    <div key={log.id} className="border-l-2 border-slate-200 pl-4 py-1">
-                                        <div className="text-xs text-slate-400 mb-1">{new Date(log.timestampOut).toLocaleDateString()}</div>
-                                        <div className="font-bold text-slate-800 text-sm">{e?.name || 'Sconosciuto'}</div>
-                                        <div className="text-sm text-slate-600 flex items-center gap-1"><Truck size={12}/> {v?.name || 'Veicolo Eliminato'}</div>
-                                        <div className="text-xs text-slate-500 mt-1">
-                                            Uscita: {new Date(log.timestampOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} 
-                                            {log.timestampIn ? ` - Rientro: ${new Date(log.timestampIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}` : ' (In Corso)'}
-                                        </div>
-                                    </div>
-                                )
-                            })}
-                            {vehicleLogs.length === 0 && <p className="text-slate-400 italic text-sm">Nessuna attività recente.</p>}
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[600px]">
+                        <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Clock size={18} className="text-slate-600"/> Registro Storico</h2>
+                            {fleetSelectedDate && (
+                                <button onClick={() => setFleetSelectedDate(null)} className="text-xs text-red-600 hover:underline">Rimuovi Filtro</button>
+                            )}
+                        </div>
+                        
+                        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                            {/* Calendar Side */}
+                            <div className="w-full md:w-1/2 p-4 border-r border-slate-100 flex flex-col">
+                                <div className="flex justify-between items-center mb-4">
+                                    <button onClick={() => setFleetCurrentMonth(new Date(fleetCurrentMonth.getFullYear(), fleetCurrentMonth.getMonth() - 1))} className="p-1 hover:bg-slate-100 rounded"><ChevronLeft size={20}/></button>
+                                    <span className="font-bold text-slate-700">{fleetCurrentMonth.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</span>
+                                    <button onClick={() => setFleetCurrentMonth(new Date(fleetCurrentMonth.getFullYear(), fleetCurrentMonth.getMonth() + 1))} className="p-1 hover:bg-slate-100 rounded"><ChevronRight size={20}/></button>
+                                </div>
+                                <div className="grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-400 mb-2">
+                                    {['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].map(d => <div key={d}>{d}</div>)}
+                                </div>
+                                <div className="grid grid-cols-7 gap-1 flex-1">
+                                    {Array.from({ length: new Date(fleetCurrentMonth.getFullYear(), fleetCurrentMonth.getMonth(), 1).getDay() === 0 ? 6 : new Date(fleetCurrentMonth.getFullYear(), fleetCurrentMonth.getMonth(), 1).getDay() - 1 }).map((_, i) => <div key={`empty-${i}`} />)}
+                                    {Array.from({ length: new Date(fleetCurrentMonth.getFullYear(), fleetCurrentMonth.getMonth() + 1, 0).getDate() }).map((_, i) => {
+                                        const day = i + 1;
+                                        const dateStr = new Date(fleetCurrentMonth.getFullYear(), fleetCurrentMonth.getMonth(), day, 12).toISOString().split('T')[0]; // Avoid timezone shifts
+                                        const hasActivity = vehicleLogs?.some(l => l.timestampOut.startsWith(dateStr));
+                                        const isSelected = fleetSelectedDate === dateStr;
+                                        
+                                        return (
+                                            <button 
+                                                key={day} 
+                                                onClick={() => setFleetSelectedDate(isSelected ? null : dateStr)}
+                                                className={`h-8 w-8 rounded-full flex items-center justify-center text-sm transition relative
+                                                    ${isSelected ? 'bg-blue-600 text-white font-bold' : 'hover:bg-slate-100 text-slate-700'}
+                                                    ${hasActivity && !isSelected ? 'font-bold' : ''}
+                                                `}
+                                            >
+                                                {day}
+                                                {hasActivity && !isSelected && <div className="absolute bottom-1 w-1 h-1 bg-orange-500 rounded-full"></div>}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <div className="mt-4 text-xs text-slate-400 text-center border-t pt-2">
+                                    Clicca su un giorno per filtrare i movimenti (utile per controllo multe)
+                                </div>
+                            </div>
+
+                            {/* List Side */}
+                            <div className="w-full md:w-1/2 overflow-y-auto p-4 bg-slate-50/50">
+                                {fleetSelectedDate && <div className="text-xs font-bold text-blue-600 mb-2 uppercase tracking-wider">Movimenti del {new Date(fleetSelectedDate).toLocaleDateString()}</div>}
+                                <div className="space-y-3">
+                                    {vehicleLogs
+                                        .filter(log => !fleetSelectedDate || log.timestampOut.startsWith(fleetSelectedDate))
+                                        .sort((a,b) => new Date(b.timestampOut).getTime() - new Date(a.timestampOut).getTime())
+                                        .map(log => {
+                                            const v = vehicles.find(v => v.id === log.vehicleId);
+                                            const e = employees.find(e => e.id === log.employeeId);
+                                            return (
+                                                <div key={log.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <span className="font-bold text-slate-800 text-sm">{e?.name || 'Sconosciuto'}</span>
+                                                        <span className="text-[10px] text-slate-400">{new Date(log.timestampOut).toLocaleDateString()}</span>
+                                                    </div>
+                                                    <div className="text-xs text-slate-600 flex items-center gap-1 mb-2"><Truck size={12}/> {v?.name || 'Veicolo Eliminato'} <span className="font-mono text-[10px] bg-slate-100 px-1 rounded">({v?.plate})</span></div>
+                                                    <div className="text-xs grid grid-cols-2 gap-2 border-t pt-2">
+                                                        <div>
+                                                            <div className="text-[10px] text-slate-400 uppercase">Ritiro</div>
+                                                            <div className="font-mono">{new Date(log.timestampOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-[10px] text-slate-400 uppercase">Riconsegna</div>
+                                                            <div className={`font-mono ${!log.timestampIn ? 'text-orange-500 font-bold' : ''}`}>
+                                                                {log.timestampIn ? new Date(log.timestampIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'IN CORSO'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )
+                                    })}
+                                    {vehicleLogs.filter(log => !fleetSelectedDate || log.timestampOut.startsWith(fleetSelectedDate)).length === 0 && (
+                                        <p className="text-slate-400 italic text-sm text-center py-4">Nessun movimento trovato.</p>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1419,18 +1495,3 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                     <p className="text-slate-500 mb-6">Esporta un file JSON completo di tutti i dati (Commesse, Dipendenti, Log, Impostazioni) o ripristina un backup precedente.</p>
                     <div className="flex gap-4">
                         <button onClick={handleBackupDownload} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-lg hover:bg-slate-900 transition"><Download size={20}/> Scarica Backup Completo</button>
-                        <div className="relative">
-                            <input type="file" ref={backupInputRef} onChange={handleBackupRestore} accept=".json" className="hidden"/>
-                            <button onClick={() => backupInputRef.current?.click()} className="flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition"><Upload size={20}/> Ripristina Backup</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )}
-
-      </div>
-    </div>
-  );
-};
-
-export default AdminDashboard;
