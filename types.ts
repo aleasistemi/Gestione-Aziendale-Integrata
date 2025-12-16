@@ -71,6 +71,26 @@ export interface WorkLog {
   notes?: string;
 }
 
+// --- NEW VEHICLE TYPES ---
+export interface Vehicle {
+  id: string;
+  name: string; // Es. "Fiat Ducato"
+  plate: string; // Targa
+  status: 'AVAILABLE' | 'IN_USE' | 'MAINTENANCE';
+  currentDriverId?: string; // Se in uso, chi lo ha?
+  lastCheckOut?: string; // ISO String di quando è stato preso
+}
+
+export interface VehicleLog {
+  id: string;
+  vehicleId: string;
+  employeeId: string;
+  timestampOut: string; // Quando è stato preso
+  timestampIn?: string; // Quando è stato restituito (null se in corso)
+  notes?: string;
+}
+// -------------------------
+
 export enum JustificationType {
   STANDARD = 'Standard', // Calcolo automatico
   FERIE = 'Ferie',
@@ -107,7 +127,7 @@ export interface GlobalSettings {
   permessoSnapMinutes?: number; // Default 15
 }
 
-export type ViewMode = 'LOGIN' | 'ATTENDANCE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';
+export type ViewMode = 'LOGIN' | 'ATTENDANCE_KIOSK' | 'VEHICLE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';
 
 // Helper type for the Database
 export interface AppDatabase {
@@ -115,6 +135,8 @@ export interface AppDatabase {
   jobs: Job[];
   logs: WorkLog[];
   attendance: AttendanceRecord[];
+  vehicles: Vehicle[];
+  vehicleLogs: VehicleLog[];
   justifications: DayJustification[];
   customPrompts: AIQuickPrompt[];
   permissions: RolePermissions;

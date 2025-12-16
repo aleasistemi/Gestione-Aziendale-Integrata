@@ -1,17 +1,20 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Employee, Job, WorkLog, AttendanceRecord, ViewMode, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, JobStatus } from './types';
+import { Employee, Job, WorkLog, AttendanceRecord, ViewMode, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, JobStatus, Vehicle, VehicleLog } from './types';
 import { dbService } from './services/db';
 import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
-import AdminDashboard from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Settings, Wifi } from 'lucide-react';
+import VehicleKiosk from './components/VehicleKiosk';
+import { AdminDashboard } from './components/AdminDashboard';
+import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Settings, Wifi, Truck } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [logs, setLogs] = useState<WorkLog[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [vehicleLogs, setVehicleLogs] = useState<VehicleLog[]>([]);
   const [justifications, setJustifications] = useState<DayJustification[]>([]);
   const [aiPrompts, setAiPrompts] = useState<AIQuickPrompt[]>([]);
   const [permissions, setPermissions] = useState<RolePermissions>({});
@@ -38,8 +41,9 @@ function App() {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Kiosk Mode Protection
-  const [showKioskPinPad, setShowKioskPinPad] = useState(false);
+  const [showKioskMenu, setShowKioskMenu] = useState(false);
   const [kioskPin, setKioskPin] = useState('');
+  const [targetKioskMode, setTargetKioskMode] = useState<'ATTENDANCE' | 'VEHICLE' | null>(null);
 
   // Load Data
   const refreshData = async () => {
@@ -49,6 +53,8 @@ function App() {
       setJobs(data.jobs);
       setLogs(data.logs);
       setAttendance(data.attendance);
+      setVehicles(data.vehicles);
+      setVehicleLogs(data.vehicleLogs);
       setJustifications(data.justifications);
       setAiPrompts(data.customPrompts);
       setPermissions(data.permissions);
@@ -84,7 +90,7 @@ function App() {
 
   // Force focus on login scanner input
   useEffect(() => {
-    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskPinPad) {
+    if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskMenu) {
          const focusInterval = setInterval(() => {
               if (document.activeElement !== loginInputRef.current) {
                   loginInputRef.current?.focus();
@@ -92,7 +98,7 @@ function App() {
           }, 500);
           return () => clearInterval(focusInterval);
     }
-  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskPinPad]);
+  }, [isAuthenticated, viewMode, settings.nfcEnabled, showLoginPinPad, showKioskMenu]);
 
   const processLoginScan = (code: string) => {
       if (code.length < 2) return;
@@ -157,9 +163,12 @@ function App() {
 
   const handleKioskEntry = () => {
       if (kioskPin === '1409') {
-          setViewMode('ATTENDANCE_KIOSK');
-          setShowKioskPinPad(false);
+          if (targetKioskMode === 'ATTENDANCE') setViewMode('ATTENDANCE_KIOSK');
+          if (targetKioskMode === 'VEHICLE') setViewMode('VEHICLE_KIOSK');
+          
+          setShowKioskMenu(false);
           setKioskPin('');
+          setTargetKioskMode(null);
       } else {
           alert('PIN Errato');
           setKioskPin('');
@@ -236,6 +245,60 @@ function App() {
       refreshData();
   }
 
+  const handleSaveVehicle = async (vehicle: Vehicle) => {
+      await dbService.saveVehicle(vehicle);
+      refreshData();
+  }
+
+  const handleDeleteVehicle = async (id: string) => {
+      await dbService.deleteVehicle(id);
+      refreshData();
+  }
+
+  const handleVehicleAction = async (vehicle: Vehicle, employee: Employee, type: 'CHECK_OUT' | 'CHECK_IN') => {
+      const timestamp = new Date().toISOString();
+      
+      if (type === 'CHECK_OUT') {
+          // Update Vehicle Status
+          const updatedVehicle: Vehicle = {
+              ...vehicle,
+              status: 'IN_USE',
+              currentDriverId: employee.id,
+              lastCheckOut: timestamp
+          };
+          await dbService.saveVehicle(updatedVehicle);
+
+          // Create New Log
+          const newLog: VehicleLog = {
+              id: Date.now().toString(),
+              vehicleId: vehicle.id,
+              employeeId: employee.id,
+              timestampOut: timestamp
+          };
+          await dbService.saveVehicleLog(newLog);
+
+      } else {
+          // CHECK IN
+          const updatedVehicle: Vehicle = {
+              ...vehicle,
+              status: 'AVAILABLE',
+              currentDriverId: undefined,
+              lastCheckOut: undefined
+          };
+          await dbService.saveVehicle(updatedVehicle);
+
+          // Find open log and close it
+          const openLog = vehicleLogs.find(l => l.vehicleId === vehicle.id && !l.timestampIn);
+          if (openLog) {
+              await dbService.saveVehicleLog({
+                  ...openLog,
+                  timestampIn: timestamp
+              });
+          }
+      }
+      refreshData();
+  }
+
   // --- Render Logic ---
 
   if (loading) {
@@ -246,7 +309,6 @@ function App() {
     );
   }
 
-  // Security Gate
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -288,6 +350,18 @@ function App() {
     );
   }
 
+  if (viewMode === 'VEHICLE_KIOSK') {
+      return (
+          <VehicleKiosk
+            employees={employees}
+            vehicles={vehicles}
+            onAction={handleVehicleAction}
+            onExit={() => setViewMode('LOGIN')}
+            nfcEnabled={settings.nfcEnabled}
+          />
+      )
+  }
+
   if (viewMode === 'LOGIN') {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -319,8 +393,6 @@ function App() {
               
               {settings.nfcEnabled ? (
                    <div className="flex flex-col items-center py-4 w-full relative">
-                      
-                      {/* INVISIBLE SCANNER INPUT FOR LOGIN */}
                       <input 
                           ref={loginInputRef}
                           type="text" 
@@ -332,14 +404,12 @@ function App() {
                           autoComplete="off"
                       />
 
-                      {/* VISUAL ANIMATION */}
                       <div className="w-48 h-48 relative flex items-center justify-center mb-4 cursor-pointer" onClick={() => loginInputRef.current?.focus()}>
                           <div className="absolute inset-0 bg-blue-50 rounded-full animate-ping opacity-20"></div>
                           <div className="absolute inset-4 bg-blue-100 rounded-full animate-pulse opacity-30"></div>
                           <div className="relative z-10 bg-white p-6 rounded-full shadow-lg border-2 border-blue-100">
                              <Scan size={48} className="text-blue-600" />
                           </div>
-                          {/* Status Indicator */}
                           <div className="absolute bottom-0 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold border border-green-200 flex items-center gap-1 shadow-sm">
                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                              Lettore Attivo
@@ -406,28 +476,43 @@ function App() {
                 </div>
            )}
 
-            {/* KIOSK MODE PIN PAD */}
-           {showKioskPinPad && (
+            {/* KIOSK MENU SELECTION */}
+           {showKioskMenu && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl flex flex-col">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold text-slate-800">Attiva Totem</h3>
-                            <button onClick={() => {setShowKioskPinPad(false); setKioskPin('');}}><X size={24} className="text-slate-400"/></button>
+                            <h3 className="text-xl font-bold text-slate-800">Attiva Modalità Totem</h3>
+                            <button onClick={() => {setShowKioskMenu(false); setKioskPin(''); setTargetKioskMode(null);}}><X size={24} className="text-slate-400"/></button>
                         </div>
-                        <div className="flex-1 flex flex-col justify-center">
-                            <p className="text-center text-slate-500 mb-2">Inserisci PIN Sicurezza</p>
-                            <div className="text-center text-3xl font-mono tracking-widest py-3 bg-slate-100 rounded-lg mb-6">
-                                {kioskPin.padEnd(4, '•').split('').map(c => c === '•' ? '•' : '*').join('')}
+                        
+                        {!targetKioskMode ? (
+                            <div className="flex flex-col gap-4">
+                                <button onClick={() => setTargetKioskMode('ATTENDANCE')} className="p-4 bg-blue-50 hover:bg-blue-100 rounded-xl flex items-center gap-4 transition group">
+                                    <div className="bg-blue-500 text-white p-3 rounded-full group-hover:scale-110 transition-transform"><Clock size={24}/></div>
+                                    <div className="text-left"><h4 className="font-bold text-slate-800">Totem Presenze</h4><p className="text-xs text-slate-500">Per ingresso/uscita dipendenti</p></div>
+                                </button>
+                                <button onClick={() => setTargetKioskMode('VEHICLE')} className="p-4 bg-orange-50 hover:bg-orange-100 rounded-xl flex items-center gap-4 transition group">
+                                    <div className="bg-orange-500 text-white p-3 rounded-full group-hover:scale-110 transition-transform"><Truck size={24}/></div>
+                                    <div className="text-left"><h4 className="font-bold text-slate-800">Totem Parco Mezzi</h4><p className="text-xs text-slate-500">Per gestione auto aziendali</p></div>
+                                </button>
                             </div>
-                            <div className="grid grid-cols-3 gap-3">
-                                {[1,2,3,4,5,6,7,8,9].map(n => (
-                                    <button key={n} onClick={() => setKioskPin(p => p.length < 4 ? p + n : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">{n}</button>
-                                ))}
-                                <button onClick={() => setKioskPin('')} className="p-3 bg-red-50 text-red-500 rounded"><Delete size={20} className="mx-auto"/></button>
-                                <button onClick={() => setKioskPin(p => p.length < 4 ? p + '0' : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">0</button>
-                                <button onClick={handleKioskEntry} className="p-3 bg-red-600 text-white rounded"><CheckCircle size={20} className="mx-auto"/></button>
+                        ) : (
+                            <div className="flex-1 flex flex-col justify-center animate-fade-in">
+                                <p className="text-center text-slate-500 mb-2">PIN Sicurezza Amministratore</p>
+                                <div className="text-center text-3xl font-mono tracking-widest py-3 bg-slate-100 rounded-lg mb-6">
+                                    {kioskPin.padEnd(4, '•').split('').map(c => c === '•' ? '•' : '*').join('')}
+                                </div>
+                                <div className="grid grid-cols-3 gap-3">
+                                    {[1,2,3,4,5,6,7,8,9].map(n => (
+                                        <button key={n} onClick={() => setKioskPin(p => p.length < 4 ? p + n : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">{n}</button>
+                                    ))}
+                                    <button onClick={() => setKioskPin('')} className="p-3 bg-red-50 text-red-500 rounded"><Delete size={20} className="mx-auto"/></button>
+                                    <button onClick={() => setKioskPin(p => p.length < 4 ? p + '0' : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">0</button>
+                                    <button onClick={handleKioskEntry} className="p-3 bg-red-600 text-white rounded"><CheckCircle size={20} className="mx-auto"/></button>
+                                </div>
+                                <button onClick={() => setTargetKioskMode(null)} className="mt-4 text-sm text-slate-400 hover:underline text-center">Indietro</button>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
            )}
@@ -437,7 +522,7 @@ function App() {
         {/* Bottom Right Tools */}
         <div className="absolute bottom-4 right-4 flex gap-2">
             <button 
-                onClick={() => setShowKioskPinPad(true)}
+                onClick={() => setShowKioskMenu(true)}
                 className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-slate-800 rounded-full transition shadow-sm"
                 title="Attiva Modalità Totem"
             >
@@ -504,6 +589,8 @@ function App() {
             logs={logs} 
             employees={employees}
             attendance={attendance}
+            vehicles={vehicles}
+            vehicleLogs={vehicleLogs}
             justifications={justifications}
             customPrompts={aiPrompts}
             permissions={permissions}
@@ -518,6 +605,8 @@ function App() {
             onSaveSettings={handleSaveSettings}
             onSaveAttendance={addAttendanceRecord}
             onDeleteAttendance={deleteAttendanceRecord}
+            onSaveVehicle={handleSaveVehicle}
+            onDeleteVehicle={handleDeleteVehicle}
           />
         ) : (
           <WorkshopPanel 
