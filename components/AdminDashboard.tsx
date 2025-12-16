@@ -90,7 +90,7 @@ const TimeInput = ({ value, onChange, className, placeholder }: { value: string,
     );
 };
 
-const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, justifications = [], customPrompts = [], permissions = {}, onSaveJob, onSaveEmployee, onSaveJustification, onSaveAiPrompts, onSavePermissions, onUpdateLog, currentUserRole, settings, onSaveSettings, onSaveAttendance, onDeleteAttendance }) => {
+export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, justifications = [], customPrompts = [], permissions = {}, onSaveJob, onSaveEmployee, onSaveJustification, onSaveAiPrompts, onSavePermissions, onUpdateLog, currentUserRole, settings, onSaveSettings, onSaveAttendance, onDeleteAttendance }) => {
   
   // Permissions Logic
   const isGodMode = currentUserRole === Role.SYSTEM_ADMIN || currentUserRole === Role.DIRECTION;
@@ -106,6 +106,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
   const allowedTabsList = getAllowedTabs();
 
+  // All Tabs Definition (used for rendering permissions table later)
   const allPossibleTabs = [
     {id: 'OVERVIEW', label: 'Panoramica', icon: LayoutDashboard},
     {id: 'JOBS', label: 'Analisi Commesse', icon: Briefcase},
@@ -125,7 +126,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   const [tempPhase, setTempPhase] = useState<string>('');
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   
-  // Sorting: Default Newest First (descending creation/id)
+  // NEW: Default sort by Creation Date Descending (Newest First)
   const [jobSort, setJobSort] = useState<SortConfig>({ key: 'creationDate', direction: 'desc' });
   const [manageJobSort, setManageJobSort] = useState<SortConfig>({ key: 'creationDate', direction: 'desc' });
   
@@ -133,11 +134,11 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   const [filterEndDate, setFilterEndDate] = useState('');
   const [newPhaseName, setNewPhaseName] = useState('');
 
-  // Search State
+  // NEW: Search and Archive State
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
-
-  // Archive State
   const [viewArchiveYear, setViewArchiveYear] = useState<string>('active');
+  const [clientSearchTerm, setClientSearchTerm] = useState(''); 
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
 
   useEffect(() => {
      if (availableTabs.length > 0 && !availableTabs.find(t => t.id === activeTab)) {
@@ -156,16 +157,13 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   const [selectedEmpForDetail, setSelectedEmpForDetail] = useState<string | null>(null);
 
   const [isEditingJob, setIsEditingJob] = useState<Partial<Job> | null>(null);
-  const [clientSearchTerm, setClientSearchTerm] = useState(''); 
-  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
-
   const [isEditingEmp, setIsEditingEmp] = useState<Partial<Employee> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   const [tempPermissions, setTempPermissions] = useState<RolePermissions>(permissions);
 
-  // Available Archives (Years)
+  // NEW: Available Archives (Years)
   const availableArchiveYears = useMemo(() => {
       const years = new Set<number>();
       jobs.filter(j => j.isArchived).forEach(j => {
@@ -174,7 +172,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       return Array.from(years).sort((a,b) => b - a);
   }, [jobs]);
 
-  // Unique Clients for Suggestion
+  // NEW: Unique Clients for Suggestion
   const uniqueClients = useMemo(() => {
       return Array.from(new Set(jobs.map(j => j.clientName))).sort();
   }, [jobs]);
@@ -212,8 +210,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
     });
   }, [jobs, logs, employees]);
 
-  // General Filter (Date + Search + Archive status for VIEWING tables)
-  // NOTE: Reports use 'jobStats' directly (includes archived). Tables use 'filteredJobStats' (excludes archived unless selected).
+  // NEW: Robust Filter Function
   const filterJobsForTable = (jobList: typeof jobStats, isManageTable: boolean) => {
       return jobList.filter(j => {
           // 1. Archive Logic
@@ -224,9 +221,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                   if (!j.isArchived || j.archiveYear !== parseInt(viewArchiveYear)) return false;
               }
           } else {
-              // Analysis Tab: Show active by default, search can find archived? 
-              // Requirement: "Analysis" searches by client/code. Let's hide archived by default unless specifically searching? 
-              // Standard behavior: Analysis usually on active. 
+              // Analysis Tab: Hide archived by default
               if (j.isArchived) return false;
           }
 
@@ -283,11 +278,9 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
       return currentSort.direction === 'asc' ? <ArrowUp size={14} className="inline ml-1"/> : <ArrowDown size={14} className="inline ml-1"/>;
   }
 
-  // --- Dashboard Analytics (Always includes Archived Data for correctness) ---
-  // Using 'jobStats' (full list) instead of filtered lists for charts.
-  
   const clientData = useMemo(() => {
     const data: {[key: string]: number} = {};
+    // Use FULL job stats for charts (so charts include everything)
     jobStats.forEach(stat => {
       data[stat.clientName] = (data[stat.clientName] || 0) + stat.totalHoursUsed;
     });
@@ -296,12 +289,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
   const statusData = useMemo(() => {
     const counts: {[key: string]: number} = {};
-    jobStats.forEach(j => { 
-        // If archived, we might want to count it as Completed or separate?
-        // User said "archive by year... consultable". 
-        // For current status chart, let's stick to status field.
-        counts[j.status] = (counts[j.status] || 0) + 1; 
-    });
+    jobStats.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
     return Object.keys(counts).map(key => ({ name: key, value: counts[key] }));
   }, [jobStats]);
 
@@ -341,7 +329,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   }, [logs, employees]);
 
   const expiringJobs = useMemo(() => {
-      // Exclude archived from expiring list
       return jobStats
         .filter(j => !j.isArchived && j.status === JobStatus.IN_PROGRESS && j.deadline)
         .sort((a,b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
@@ -374,7 +361,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
         }));
   }, [logs, employees, jobs]);
 
-  // ... (Methods handleAskAI, handleExcelExportJobs, handleBackup... remain unchanged)
   const handleAskAI = async (promptText: string = aiPrompt) => {
     if (!settings.geminiApiKey) {
         alert("Per utilizzare AI Analyst, devi prima inserire una API Key valida nella sezione CONFIGURAZIONE.");
@@ -384,7 +370,8 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
     setAiPrompt(promptText);
     setIsLoadingAi(true);
     setAiResponse('');
-    const context = { jobs: jobStats, logs, employees }; // Feed ALL stats (including archived) to AI
+    // NEW: Use full stats for AI to give better context
+    const context = { jobs: jobStats, logs, employees };
     try {
         const result = await analyzeBusinessData(promptText, context, settings.geminiApiKey);
         setAiResponse(result);
@@ -410,13 +397,13 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
           'Codice': j.code,
           'Cliente': j.clientName,
           'Descrizione': j.description,
-          'Data Inizio': j.creationDate || j.startDate, 
           'Stato': j.status,
           'Budget Ore': j.budgetHours,
           'Ore Usate': j.totalHoursUsed,
           'Valore Commessa': j.budgetValue,
           'Margine': j.profitMargin,
           'Scadenza': j.deadline,
+          'Data Inizio': j.startDate,
           'Priorità': j.priority || 3,
           'Archiviata': j.isArchived ? `Sì (${j.archiveYear})` : 'No'
       }));
@@ -500,6 +487,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
           headerRow.forEach((cell, idx) => { if(typeof cell === 'string') colMap[cell.trim()] = idx; });
           const getCol = (row: any[], name: string) => { const idx = colMap[name]; return (idx !== undefined && row[idx] !== undefined) ? row[idx] : null; }
           
+          // NEW: Robust Date Formatting for Excel
           const formatDate = (val: any) => {
               if(!val) return '';
               if (val instanceof Date) return val.toISOString().split('T')[0];
@@ -655,6 +643,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   // --- HR CALCULATIONS ---
   const calculateDailyStats = (empId: string, dateStr: string) => {
     const emp = employees.find(e => e.id === empId);
+    // NEW: Safe guard against missing employee
     if (!emp) return { standardHours: 0, overtime: 0, isLate: false, isAnomaly: false, isAbsent: false, firstIn: null, lastOut: null, lunchOut: null, lunchIn: null, records: [], justification: null, firstInId: null, lunchOutId: null, lunchInId: null, lastOutId: null };
 
     const overtimeSnap = settings.overtimeSnapMinutes || 30;
@@ -675,7 +664,16 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
     let lastOut = null, lastOutId = null, lastOutMins = 0;
 
     const getMinutes = (d: Date) => d.getHours() * 60 + d.getMinutes();
-    const parseTimeStr = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    
+    // NEW: Safe Time Parsing (Protects against undefined schedules)
+    const parseTimeStr = (t: string | undefined | null) => { 
+        if (!t) return 0; // Return 0 if undefined
+        const parts = t.split(':');
+        if (parts.length < 2) return 0;
+        const [h, m] = parts.map(Number); 
+        if (isNaN(h) || isNaN(m)) return 0;
+        return h * 60 + m; 
+    };
 
     if (dayAttendance.length > 0 && dayAttendance[0].type === 'ENTRATA') {
         const d = new Date(dayAttendance[0].timestamp);
@@ -789,6 +787,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   }
   const setJustificationForDay = (empId: string, dateStr: string, type: JustificationType, hours: number = 0) => { onSaveJustification({ id: `${empId}-${dateStr}`, employeeId: empId, date: dateStr, type, hoursOffset: hours }); };
   
+  // NEW: Save Job Form with creationDate logic
   const handleSaveJobForm = () => { 
       if (!isEditingJob?.code) return; 
       onSaveJob({
@@ -796,11 +795,12 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
           id: isEditingJob.id || Date.now().toString(), 
           status: isEditingJob.status || JobStatus.PLANNED, 
           priority: isEditingJob.priority || 3,
-          creationDate: isEditingJob.creationDate || new Date().toISOString().split('T')[0] // Default to today if new
+          creationDate: isEditingJob.creationDate || new Date().toISOString().split('T')[0] 
       } as Job); 
       setIsEditingJob(null); 
   };
 
+  // NEW: Archive Handlers
   const handleArchiveJob = (job: Job) => {
       if (confirm(`Vuoi archiviare la commessa ${job.code}? Sparirà dalla lista principale ma rimarrà nei report.`)) {
           const archiveYear = new Date().getFullYear();
@@ -1086,6 +1086,40 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
             </div>
         )}
 
+        {activeTab === 'HR' && (
+             <div className="space-y-6">
+                <div className="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <Calendar className="text-blue-600"/>
+                    <label className="text-sm font-medium text-slate-700">Mese di Competenza:</label>
+                    <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border border-slate-300 rounded px-2 py-1"/>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                     <div className="p-4 border-b border-slate-100 flex justify-between items-center"><h3 className="font-bold text-slate-700">Riepilogo Presenze Mensile</h3><button onClick={handleExportSummary} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm transition"><FileSpreadsheet size={16}/> Export Riepilogo Paghe</button></div>
+                    <table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Dipendente</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Giorni Pres.</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ore Ordinarie</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Straordinari</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Assenze/Ferie/Mal.</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{payrollStats.map(stat => (<tr key={stat.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{stat.name}<div className="text-xs text-slate-400">{stat.role}</div></td><td className="px-6 py-4 text-slate-500">{stat.daysWorked}</td><td className="px-6 py-4 font-bold text-slate-700">{stat.totalWorked.toFixed(2)}</td><td className="px-6 py-4 text-slate-500">{stat.totalOvertime > 0 ? <span className="text-orange-600 font-bold">{stat.totalOvertime.toFixed(2)}</span> : '-'}</td><td className="px-6 py-4 text-xs space-y-1">{stat.absenceCount > 0 && <div className="text-red-600 font-bold">Assenze Ing.: {stat.absenceCount} gg</div>}{stat.ferieCount > 0 && <div className="text-blue-600">Ferie: {stat.ferieCount} gg</div>}{stat.malattiaCount > 0 && <div className="text-purple-600">Malattia: {stat.malattiaCount} gg</div>}</td><td className="px-6 py-4 text-right"><button onClick={() => setSelectedEmpForDetail(stat.id)} className="bg-slate-100 hover:bg-blue-50 text-blue-600 px-3 py-1 rounded border border-slate-200 text-sm font-medium transition">Gestisci / Cartellino</button></td></tr>))}</tbody></table>
+                </div>
+                {selectedEmpForDetail && (
+                    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-xl w-full max-w-6xl max-h-[95vh] flex flex-col shadow-2xl">
+                            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl"><div><h3 className="text-2xl font-bold text-slate-800">{employees.find(e => e.id === selectedEmpForDetail)?.name}</h3><p className="text-slate-500 text-sm">Cartellino Presenze: {new Date(selectedMonth).toLocaleDateString('it-IT', {month:'long', year:'numeric'})}</p></div><div className="flex gap-2"><button onClick={() => handleExportTimecard(selectedEmpForDetail)} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"><FileSpreadsheet size={18}/> Scarica Excel</button><button onClick={() => setSelectedEmpForDetail(null)} className="p-2 hover:bg-slate-200 rounded-full transition"><X size={24} className="text-slate-500"/></button></div></div>
+                            <div className="flex-1 overflow-auto p-6"><table className="w-full text-sm border-collapse"><thead><tr className="bg-slate-100 text-slate-600 border-b border-slate-300"><th className="p-2 border border-slate-200 text-left">Data</th><th className="p-2 border border-slate-200 text-center w-20">Entrata</th><th className="p-2 border border-slate-200 text-center w-20">Uscita (P)</th><th className="p-2 border border-slate-200 text-center w-20">Entrata (P)</th><th className="p-2 border border-slate-200 text-center w-20">Uscita</th><th className="p-2 border border-slate-200 text-center w-20 bg-blue-50 font-bold text-blue-800">Ore Ord.</th><th className="p-2 border border-slate-200 text-center w-20 bg-orange-50 font-bold text-orange-800">Straord.</th><th className="p-2 border border-slate-200 text-center w-24">Giustificativo</th><th className="p-2 border border-slate-200 text-center w-16">Note</th></tr></thead><tbody>{Array.from({length: new Date(parseInt(selectedMonth.split('-')[0]), parseInt(selectedMonth.split('-')[1]), 0).getDate()}, (_, i) => i + 1).map(day => {const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`; const stats = calculateDailyStats(selectedEmpForDetail, dateStr); const dateObj = new Date(dateStr); const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6; let rowClass = "hover:bg-slate-50"; if (isWeekend) rowClass = "bg-slate-50 text-slate-400"; if (stats.isAbsent) rowClass = "bg-red-50"; if (stats.isAnomaly) rowClass = "bg-orange-50"; return (<tr key={day} className={`border-b border-slate-200 ${rowClass}`}><td className="p-2 border border-slate-200"><div className="font-bold">{String(day).padStart(2,'0')}</div><div className="text-xs uppercase">{dateObj.toLocaleDateString('it-IT', {weekday:'short'})}</div></td><td className={`p-1 border border-slate-200 text-center ${stats.isLate ? 'text-orange-600 font-bold' : ''}`}><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.firstIn || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.firstInId, 'ENTRATA')} /></td><td className="p-1 border border-slate-200 text-center"><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.lunchOut || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.lunchOutId, 'USCITA')} /></td><td className="p-1 border border-slate-200 text-center"><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.lunchIn || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.lunchInId, 'ENTRATA')} /></td><td className="p-1 border border-slate-200 text-center"><TimeInput className="w-full text-center bg-transparent border-transparent focus:border-blue-500 rounded px-1 outline-none text-xs" value={stats.lastOut || ''} onChange={(val) => handleTimeChange(selectedEmpForDetail, dateStr, val, stats.lastOutId, 'USCITA')} /></td><td className="p-2 border border-slate-200 text-center font-bold">{stats.standardHours > 0 ? stats.standardHours.toFixed(2) : '-'}</td><td className="p-2 border border-slate-200 text-center text-orange-600 font-bold">{stats.overtime > 0 ? stats.overtime.toFixed(2) : ''}</td><td className="p-2 border border-slate-200 text-center"><select className={`w-full text-xs p-1 border rounded ${stats.justification ? 'bg-blue-100 font-bold text-blue-800 border-blue-300' : 'bg-white'}`} value={stats.justification?.type || ''} onChange={(e) => {if (e.target.value) setJustificationForDay(selectedEmpForDetail, dateStr, e.target.value as JustificationType); else onSaveJustification({ ...stats.justification!, id: `${selectedEmpForDetail}-${dateStr}`, type: JustificationType.STANDARD });}}><option value="">-</option><option value={JustificationType.FERIE}>FERIE</option><option value={JustificationType.MALATTIA}>MALATTIA</option><option value={JustificationType.PERMESSO}>PERMESSO</option></select></td><td className="p-2 border border-slate-200 text-center text-xs">{stats.isLate && <span className="block text-orange-600 font-bold">RITARDO</span>}{stats.isAbsent && <span className="block text-red-600 font-bold">ASSENZA</span>}{stats.isAnomaly && <span className="block text-orange-500 font-bold">ANOMALIA</span>}</td></tr>)})}</tbody></table></div>
+                        </div>
+                    </div>
+                )}
+             </div>
+        )}
+
+        {activeTab === 'AI' && (
+             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                 {!settings.geminiApiKey ? (<div className="flex flex-col items-center justify-center py-12 text-center"><div className="bg-orange-100 p-4 rounded-full mb-4"><Key className="text-orange-500" size={32}/></div><h3 className="text-xl font-bold text-slate-800 mb-2">Configurazione Richiesta</h3><p className="text-slate-500 max-w-md mb-6">Per utilizzare l'analista AI, è necessario inserire una API Key di Google Gemini valida nelle impostazioni.</p><button onClick={() => {if(isSystem) setActiveTab('CONFIG')}} className="text-blue-600 font-bold hover:underline">Vai alla Configurazione</button></div>) : (
+                 <>
+                    <div className="flex items-center gap-3 mb-6"><div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-2 rounded-lg"><BrainCircuit size={24} /></div><div><h2 className="text-xl font-bold text-slate-800">Analista Aziendale IA</h2><p className="text-slate-500 text-sm">Analisi predittiva e insight sui dati aziendali</p></div></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">{customPrompts.map((prompt) => (<div key={prompt.id} className="relative group">{editingPromptId === prompt.id ? (<div className="p-3 bg-white border-2 border-blue-500 rounded-lg shadow-lg z-10 absolute top-0 left-0 w-full min-w-[200px]"><input type="text" className="w-full text-xs font-bold mb-2 border-b outline-none" value={tempPromptLabel} onChange={(e) => setTempPromptLabel(e.target.value)} placeholder="Etichetta"/><textarea className="w-full text-xs p-1 border rounded resize-none outline-none mb-2" rows={3} value={tempPromptText} onChange={(e) => setTempPromptText(e.target.value)} placeholder="Domanda per IA..."/><div className="flex justify-end gap-1"><button onClick={() => setEditingPromptId(null)} className="p-1 hover:bg-slate-100 rounded text-slate-500"><X size={14}/></button><button onClick={() => handleSavePrompt(prompt.id)} className="p-1 hover:bg-green-100 text-green-600 rounded"><Save size={14}/></button></div></div>) : (<button onClick={() => handleAskAI(prompt.prompt)} className="w-full p-3 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 border border-slate-200 rounded-lg text-left transition relative h-full flex flex-col justify-between group-hover:shadow-md"><span className="text-sm font-semibold text-slate-700 block mb-1">{prompt.label}</span><span className="text-xs text-slate-400 line-clamp-2">{prompt.prompt}</span><div onClick={(e) => { e.stopPropagation(); setEditingPromptId(prompt.id); setTempPromptLabel(prompt.label); setTempPromptText(prompt.prompt); }} className="absolute top-2 right-2 p-1 text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition"><Pencil size={12} /></div></button>)}</div>))}</div>
+                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 min-h-[200px] mb-4 shadow-inner">{aiResponse ? (<div className="prose prose-sm max-w-none text-slate-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }} />) : (<div className="text-center text-slate-400 py-16 flex flex-col items-center gap-3">{isLoadingAi ? <Loader2 className="animate-spin text-blue-500" size={32}/> : <div className="flex flex-col items-center"><BrainCircuit size={48} className="text-slate-300 mb-2"/><span>Seleziona una domanda rapida o scrivi la tua richiesta qui sotto.</span></div>}</div>)}</div>
+                    <div className="flex gap-2 relative"><input type="text" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="Fai una domanda libera sui tuoi dati..." className="flex-1 border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none pl-12 shadow-sm"/><div className="absolute left-4 top-3.5 text-slate-400"><Info size={20}/></div><button onClick={() => handleAskAI()} disabled={!aiPrompt || isLoadingAi} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 shadow-sm">{isLoadingAi ? 'Analisi...' : 'Chiedi'}</button></div>
+                 </>)}
+            </div>
+        )}
+
         {activeTab === 'MANAGE' && (
             <div className="space-y-6">
                 <div className="flex gap-4 mb-6"><button onClick={() => setManageSubTab('JOBS')} className={`px-4 py-2 rounded-lg font-medium transition ${manageSubTab === 'JOBS' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>Gestione Commesse</button>{(canManageEmployees || isSystem) && <button onClick={() => setManageSubTab('EMPLOYEES')} className={`px-4 py-2 rounded-lg font-medium transition ${manageSubTab === 'EMPLOYEES' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>Gestione Dipendenti</button>}</div>
@@ -1094,8 +1128,8 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                         <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
                             <h2 className="text-xl font-bold text-slate-800">Elenco Commesse</h2>
                             
+                            {/* SEARCH AND ARCHIVE CONTROLS */}
                             <div className="flex items-center gap-4">
-                                {/* Search in Manage */}
                                 <div className="relative">
                                     <input 
                                         type="text" 
@@ -1106,8 +1140,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                                     />
                                     <Search className="absolute left-3 top-2 text-slate-400" size={16}/>
                                 </div>
-
-                                {/* Archive Selector */}
                                 <select 
                                     value={viewArchiveYear} 
                                     onChange={(e) => setViewArchiveYear(e.target.value)}
@@ -1122,7 +1154,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
                             <div className="flex gap-2">
                                 <input type="file" accept=".xlsx, .xls, .xml" onChange={handleExcelImport} className="hidden" ref={fileInputRef} />
-                                {(isGodMode) && <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"><FileSpreadsheet size={18} /> Importa</button>}
+                                {(isGodMode) && <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"><FileSpreadsheet size={18} /> Importa/Aggiorna</button>}
                                 {(isGodMode) && <button onClick={() => handleExcelExportJobs(sortedManageJobs)} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition"><Download size={18} /> Export</button>}
                                 {(isSystem) && <button onClick={handleResetJobs} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"><Eraser size={18} /> Svuota</button>}
                                 <button onClick={() => { setIsEditingJob({}); setClientSearchTerm(''); }} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"><Plus size={18} /> Nuova</button>
@@ -1135,7 +1167,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                                     <div className="grid grid-cols-2 gap-4">
                                         <div><label className="block text-sm font-medium text-slate-700">Codice</label><input type="text" className="w-full border p-2 rounded" value={isEditingJob.code || ''} onChange={e => setIsEditingJob({...isEditingJob, code: e.target.value})} /></div>
                                         
-                                        {/* Smart Client Selection */}
+                                        {/* SMART CLIENT SELECTION */}
                                         <div className="relative">
                                             <label className="block text-sm font-medium text-slate-700">Cliente</label>
                                             <input 
@@ -1148,7 +1180,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                                                     setShowClientSuggestions(true);
                                                 }}
                                                 onFocus={() => setShowClientSuggestions(true)}
-                                                onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)} // Delay to allow click
+                                                onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
                                                 placeholder="Cerca o inserisci nuovo..."
                                             />
                                             {showClientSuggestions && (isEditingJob.clientName || clientSearchTerm) && (
@@ -1187,7 +1219,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                         )}
                         <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th onClick={() => requestSort('code', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Codice {renderSortArrow('code', manageJobSort)}</th><th onClick={() => requestSort('clientName', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Cliente {renderSortArrow('clientName', manageJobSort)}</th><th onClick={() => requestSort('priority', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer">Priorità {renderSortArrow('priority', manageJobSort)}</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Data Inizio</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Budget/Valore</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Stato</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{sortedManageJobs.map((job) => (<tr key={job.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{job.code}</td><td className="px-6 py-4 text-slate-500">{job.clientName}</td><td className="px-6 py-4 text-slate-500 flex gap-1">{Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}</td><td className="px-6 py-4 text-slate-500 text-xs">{job.creationDate ? new Date(job.creationDate).toLocaleDateString('it-IT') : '-'}</td><td className="px-6 py-4 text-slate-500">{job.budgetHours}h / €{job.budgetValue}</td><td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td><td className="px-6 py-4 flex gap-2">
                             <button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800"><Edit2 size={18}/></button>
-                            {/* Archive Action */}
+                            {/* ARCHIVE / RESTORE BUTTONS */}
                             {!job.isArchived && job.status === JobStatus.COMPLETED && (
                                 <button onClick={() => handleArchiveJob(job)} className="text-slate-400 hover:text-orange-600" title="Archivia"><Archive size={18}/></button>
                             )}
@@ -1211,7 +1243,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
             </div>
         )}
 
-        {/* ... (CONFIG tab remains unchanged) ... */}
         {activeTab === 'CONFIG' && isSystem && (
             <div className="space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
