@@ -846,13 +846,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   
   const payrollStats = useMemo(() => getPayrollData(), [employees, attendance, justifications, selectedMonth]);
 
-  // --- CALENDAR LOGIC (MINI) ---
-  const getDaysInMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-  const getFirstDayOfMonth = (date: Date) => {
-      const day = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
-      return day === 0 ? 6 : day - 1; // Adjust for Monday start
-  };
-
   const handleExportSummary = () => {
       const data = payrollStats.map(stat => ({
           'Dipendente': stat.name,
@@ -1139,7 +1132,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
              </div>
         )}
 
-        {/* --- NEW FLEET TAB --- */}
+        {/* --- NEW FLEET TAB WITH CALENDAR --- */}
         {activeTab === 'FLEET' && (
             <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1206,11 +1199,16 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                 <div className="grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-400 mb-2">
                                     {['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].map(d => <div key={d}>{d}</div>)}
                                 </div>
-                                <div className="grid grid-cols-7 gap-1 flex-1">
+                                <div className="grid grid-cols-7 gap-1 flex-1 content-start">
                                     {Array.from({ length: new Date(fleetCurrentMonth.getFullYear(), fleetCurrentMonth.getMonth(), 1).getDay() === 0 ? 6 : new Date(fleetCurrentMonth.getFullYear(), fleetCurrentMonth.getMonth(), 1).getDay() - 1 }).map((_, i) => <div key={`empty-${i}`} />)}
                                     {Array.from({ length: new Date(fleetCurrentMonth.getFullYear(), fleetCurrentMonth.getMonth() + 1, 0).getDate() }).map((_, i) => {
                                         const day = i + 1;
-                                        const dateStr = new Date(fleetCurrentMonth.getFullYear(), fleetCurrentMonth.getMonth(), day, 12).toISOString().split('T')[0]; // Avoid timezone shifts
+                                        // Construct date string manually to avoid timezone issues
+                                        const y = fleetCurrentMonth.getFullYear();
+                                        const m = String(fleetCurrentMonth.getMonth() + 1).padStart(2, '0');
+                                        const d = String(day).padStart(2, '0');
+                                        const dateStr = `${y}-${m}-${d}`;
+                                        
                                         const hasActivity = vehicleLogs?.some(l => l.timestampOut.startsWith(dateStr));
                                         const isSelected = fleetSelectedDate === dateStr;
                                         
@@ -1218,7 +1216,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                             <button 
                                                 key={day} 
                                                 onClick={() => setFleetSelectedDate(isSelected ? null : dateStr)}
-                                                className={`h-8 w-8 rounded-full flex items-center justify-center text-sm transition relative
+                                                className={`h-8 w-8 rounded-full flex items-center justify-center text-sm transition relative mx-auto
                                                     ${isSelected ? 'bg-blue-600 text-white font-bold' : 'hover:bg-slate-100 text-slate-700'}
                                                     ${hasActivity && !isSelected ? 'font-bold' : ''}
                                                 `}
@@ -1495,3 +1493,18 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                     <p className="text-slate-500 mb-6">Esporta un file JSON completo di tutti i dati (Commesse, Dipendenti, Log, Impostazioni) o ripristina un backup precedente.</p>
                     <div className="flex gap-4">
                         <button onClick={handleBackupDownload} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-lg hover:bg-slate-900 transition"><Download size={20}/> Scarica Backup Completo</button>
+                        <div className="relative">
+                            <input type="file" ref={backupInputRef} onChange={handleBackupRestore} accept=".json" className="hidden"/>
+                            <button onClick={() => backupInputRef.current?.click()} className="flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition"><Upload size={20}/> Ripristina Backup</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+      </div>
+    </div>
+  );
+};
+
+export default AdminDashboard;
