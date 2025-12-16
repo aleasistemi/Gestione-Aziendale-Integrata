@@ -90,7 +90,7 @@ const TimeInput = ({ value, onChange, className, placeholder }: { value: string,
     );
 };
 
-const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, justifications = [], customPrompts = [], permissions = {}, onSaveJob, onSaveEmployee, onSaveJustification, onSaveAiPrompts, onSavePermissions, onUpdateLog, currentUserRole, settings, onSaveSettings, onSaveAttendance, onDeleteAttendance }) => {
+export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, justifications = [], customPrompts = [], permissions = {}, onSaveJob, onSaveEmployee, onSaveJustification, onSaveAiPrompts, onSavePermissions, onUpdateLog, currentUserRole, settings, onSaveSettings, onSaveAttendance, onDeleteAttendance }) => {
   
   // Permissions Logic
   const isGodMode = currentUserRole === Role.SYSTEM_ADMIN || currentUserRole === Role.DIRECTION;
@@ -106,6 +106,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
 
   const allowedTabsList = getAllowedTabs();
 
+  // Defined here to be accessible in the MANAGE tab render
   const allPossibleTabs = [
     {id: 'OVERVIEW', label: 'Panoramica', icon: LayoutDashboard},
     {id: 'JOBS', label: 'Analisi Commesse', icon: Briefcase},
@@ -224,9 +225,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
                   if (!j.isArchived || j.archiveYear !== parseInt(viewArchiveYear)) return false;
               }
           } else {
-              // Analysis Tab: Show active by default, search can find archived? 
-              // Requirement: "Analysis" searches by client/code. Let's hide archived by default unless specifically searching? 
-              // Standard behavior: Analysis usually on active. 
+              // Analysis Tab: Hide archived by default
               if (j.isArchived) return false;
           }
 
@@ -284,7 +283,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   }
 
   // --- Dashboard Analytics (Always includes Archived Data for correctness) ---
-  // Using 'jobStats' (full list) instead of filtered lists for charts.
   
   const clientData = useMemo(() => {
     const data: {[key: string]: number} = {};
@@ -297,9 +295,6 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   const statusData = useMemo(() => {
     const counts: {[key: string]: number} = {};
     jobStats.forEach(j => { 
-        // If archived, we might want to count it as Completed or separate?
-        // User said "archive by year... consultable". 
-        // For current status chart, let's stick to status field.
         counts[j.status] = (counts[j.status] || 0) + 1; 
     });
     return Object.keys(counts).map(key => ({ name: key, value: counts[key] }));
@@ -653,6 +648,7 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
   }
 
   // --- HR CALCULATIONS ---
+  // Blindata: Gestisce valori null/undefined senza crashare
   const calculateDailyStats = (empId: string, dateStr: string) => {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return { standardHours: 0, overtime: 0, isLate: false, isAnomaly: false, isAbsent: false, firstIn: null, lastOut: null, lunchOut: null, lunchIn: null, records: [], justification: null, firstInId: null, lunchOutId: null, lunchInId: null, lastOutId: null };
@@ -675,7 +671,16 @@ const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attendance, ju
     let lastOut = null, lastOutId = null, lastOutMins = 0;
 
     const getMinutes = (d: Date) => d.getHours() * 60 + d.getMinutes();
-    const parseTimeStr = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    
+    // SAFE PARSING OF TIME STRINGS
+    const parseTimeStr = (t: string | undefined | null) => { 
+        if (!t) return 0;
+        const parts = t.split(':');
+        if (parts.length < 2) return 0;
+        const [h, m] = parts.map(Number); 
+        if (isNaN(h) || isNaN(m)) return 0;
+        return h * 60 + m; 
+    };
 
     if (dayAttendance.length > 0 && dayAttendance[0].type === 'ENTRATA') {
         const d = new Date(dayAttendance[0].timestamp);
