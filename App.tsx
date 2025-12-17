@@ -153,6 +153,7 @@ function App() {
               const formData = new FormData();
               formData.append('file', blob, filename);
               formData.append('filename', filename);
+              formData.append('json_content', data); // Send raw text too
               formData.append('type', 'auto_backup');
 
               await fetch(settings.backupWebhookUrl, {
