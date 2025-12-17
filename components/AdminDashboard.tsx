@@ -101,22 +101,31 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const isSystem = currentUserRole === Role.SYSTEM_ADMIN;
   
   const getAllowedTabs = () => {
-      // 1. Always allow System Admin full access
+      // 1. GOD MODE BYPASS: Always allow System Admin full access regardless of DB
       if (isSystem) return ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE', 'CONFIG'];
       
-      // 2. Always allow Direction full access (except Config)
+      // 2. DIRECTION BYPASS: Always allow Direction full access (except Config)
       if (currentUserRole === Role.DIRECTION) return ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE'];
 
-      // 3. Check DB Permissions
+      // 3. CHECK DB PERMISSIONS (If exist)
       const rolePerms = permissions[currentUserRole];
       if (rolePerms && rolePerms.length > 0) return rolePerms;
 
-      // 4. Fallback Defaults (if DB is empty or loading)
-      if (currentUserRole === Role.ADMIN || currentUserRole === Role.ACCOUNTING) return ['HR', 'FLEET'];
-      if (currentUserRole === Role.SALES || currentUserRole === Role.TECHNICAL) return ['OVERVIEW', 'JOBS', 'MANAGE'];
-      
-      // Default for others
-      return ['OVERVIEW'];
+      // 4. ROBUST FALLBACKS (If DB is empty/loading or permissions not set)
+      switch(currentUserRole) {
+          case Role.ADMIN:
+          case Role.ACCOUNTING:
+              return ['OVERVIEW', 'HR', 'FLEET', 'JOBS', 'MANAGE'];
+          case Role.SALES:
+          case Role.TECHNICAL:
+              return ['OVERVIEW', 'JOBS', 'MANAGE', 'FLEET', 'AI'];
+          case Role.WORKSHOP:
+          case Role.WAREHOUSE:
+          case Role.EMPLOYEE:
+              return ['OVERVIEW']; // Basic view
+          default:
+              return ['OVERVIEW'];
+      }
   }
 
   const allowedTabsList = getAllowedTabs();
