@@ -39,6 +39,7 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
   [Role.SALES]: ['OVERVIEW', 'JOBS', 'MANAGE'],
   [Role.TECHNICAL]: ['OVERVIEW', 'JOBS', 'MANAGE'],
   [Role.WORKSHOP]: [],
+  [Role.WAREHOUSE]: [], // Magazzino base (solo accesso tramite totem solitamente, o app limitata)
   [Role.EMPLOYEE]: []
 };
 
@@ -74,11 +75,17 @@ const SEED_DATA: AppDatabase = {
   settings: DEFAULT_SETTINGS
 };
 
+// LocalStorage Keys
+const OFFLINE_ATTENDANCE_KEY = 'offline_attendance_queue';
+
 class DatabaseService {
   
   // Metodo per inizializzare il DB se vuoto (Primo Deploy)
   private async seedDatabaseIfNeeded() {
       try {
+          // Check if DB is reachable first
+          if (!navigator.onLine) return; 
+
           const empSnap = await getDocs(collection(db, 'employees'));
           if (empSnap.empty) {
               console.log("Database vuoto. Avvio procedura di Seed iniziale...");
@@ -101,6 +108,19 @@ class DatabaseService {
   }
 
   async getAllData(): Promise<AppDatabase> {
+    // Se offline, ritorna dati "best effort" (o mock se vuoto) e un array per le nuove timbrature
+    // In una PWA reale useremmo IndexedDB per cache completa. Qui semplifichiamo.
+    if (!navigator.onLine) {
+        console.warn("App offline. Caricamento limitato.");
+        // Nota: Qui idealmente caricheremmo da una cache locale. 
+        // Per ora ritorniamo SEED_DATA + offline queue per non rompere la UI.
+        const offlineQueue = this.getOfflineAttendance();
+        return {
+            ...SEED_DATA,
+            attendance: [...SEED_DATA.attendance, ...offlineQueue]
+        };
+    }
+
     // Controllo seed al primo caricamento
     await this.seedDatabaseIfNeeded();
 
@@ -121,12 +141,18 @@ class DatabaseService {
         const employees = empSnap.docs.map(d => d.data() as Employee);
         const jobs = jobSnap.docs.map(d => d.data() as Job);
         const logs = logSnap.docs.map(d => d.data() as WorkLog);
-        const attendance = attSnap.docs.map(d => d.data() as AttendanceRecord);
+        let attendance = attSnap.docs.map(d => d.data() as AttendanceRecord);
         const justifications = justSnap.docs.map(d => d.data() as DayJustification);
         const customPrompts = promptSnap.docs.map(d => d.data() as AIQuickPrompt);
         const vehicles = vehSnap.docs.map(d => d.data() as Vehicle);
         const vehicleLogs = vehLogSnap.docs.map(d => d.data() as VehicleLog);
         
+        // Merge offline queue if present
+        const offlineQueue = this.getOfflineAttendance();
+        if (offlineQueue.length > 0) {
+            attendance = [...attendance, ...offlineQueue];
+        }
+
         // Gestione documenti singoli (Settings / Permissions)
         const permDoc = permSnap.docs.find(d => d.id === 'roles');
         const permissions = permDoc ? permDoc.data().map as RolePermissions : DEFAULT_PERMISSIONS;
@@ -165,22 +191,73 @@ class DatabaseService {
     }
   }
 
+  // --- OFFLINE SUPPORT HELPERS ---
+  private getOfflineAttendance(): AttendanceRecord[] {
+      try {
+          const raw = localStorage.getItem(OFFLINE_ATTENDANCE_KEY);
+          return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+  }
+
+  private saveOfflineAttendance(record: AttendanceRecord) {
+      const current = this.getOfflineAttendance();
+      current.push({...record, isOfflineSync: true});
+      localStorage.setItem(OFFLINE_ATTENDANCE_KEY, JSON.stringify(current));
+  }
+
+  async syncOfflineAttendance(): Promise<number> {
+      if (!navigator.onLine) return 0;
+      const queue = this.getOfflineAttendance();
+      if (queue.length === 0) return 0;
+
+      console.log(`Syncing ${queue.length} offline records...`);
+      let syncedCount = 0;
+      const batch = writeBatch(db);
+      
+      // Process in chunks just in case, but usually small
+      for (const record of queue) {
+          const ref = doc(db, 'attendance', record.id);
+          batch.set(ref, record);
+          syncedCount++;
+      }
+
+      try {
+          await batch.commit();
+          // Clear local storage ONLY if commit successful
+          localStorage.removeItem(OFFLINE_ATTENDANCE_KEY);
+          return syncedCount;
+      } catch (e) {
+          console.error("Sync failed:", e);
+          return 0;
+      }
+  }
+
   // --- STANDARD OPERATIONS ---
   async saveWorkLog(log: WorkLog): Promise<void> {
+    if (!navigator.onLine) throw new Error("Offline: Impossible salvare log lavoro.");
     const cleanLog = JSON.parse(JSON.stringify(log)); 
     await setDoc(doc(db, 'logs', log.id), cleanLog);
   }
 
   async deleteWorkLog(logId: string): Promise<void> {
+    if (!navigator.onLine) throw new Error("Offline: Impossible eliminare.");
     await deleteDoc(doc(db, 'logs', logId));
   }
 
   async saveAttendance(record: AttendanceRecord): Promise<void> {
-    const cleanRecord = JSON.parse(JSON.stringify(record));
-    await setDoc(doc(db, 'attendance', record.id), cleanRecord);
+    try {
+        if (!navigator.onLine) throw new Error("Offline");
+        const cleanRecord = JSON.parse(JSON.stringify(record));
+        await setDoc(doc(db, 'attendance', record.id), cleanRecord);
+    } catch (e) {
+        // Fallback to Offline Storage
+        console.warn("Saving attendance locally (Offline mode)");
+        this.saveOfflineAttendance(record);
+    }
   }
 
   async deleteAttendance(recordId: string): Promise<void> {
+    if (!navigator.onLine) throw new Error("Offline: Impossible eliminare.");
     await deleteDoc(doc(db, 'attendance', recordId));
   }
 
