@@ -148,12 +148,15 @@ function App() {
               console.log("Sending backup to Webhook...");
               
               // Use FormData to send as a file attachment
-              const blob = new Blob([data], { type: 'application/json' });
+              // IMPORTANT: Using 'text/plain' helps Pabbly understand it's text content, not binary doc
+              const blob = new Blob([data], { type: 'text/plain' });
               const filename = `backup_alea_${new Date().toISOString().split('T')[0]}.json`;
               const formData = new FormData();
               formData.append('file', blob, filename);
               formData.append('filename', filename);
-              formData.append('json_content', data); // Send raw text too
+              
+              // CRITICAL FIX: Send raw content as a separate field
+              formData.append('json_content', data); 
               formData.append('type', 'auto_backup');
 
               await fetch(settings.backupWebhookUrl, {
