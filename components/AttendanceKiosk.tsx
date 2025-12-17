@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, AttendanceRecord, Role } from '../types';
-import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Wifi, AlertCircle, Play, Laptop } from 'lucide-react';
+import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Wifi, AlertCircle, Play, Laptop, CloudOff, CloudCog } from 'lucide-react';
+import { dbService } from '../services/db';
 
 interface Props {
   employees: Employee[];
@@ -30,6 +31,10 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
   const [showExitPinPad, setShowExitPinPad] = useState(false);
   const [exitPin, setExitPin] = useState('');
 
+  // Connectivity State
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isSyncing, setIsSyncing] = useState(false);
+
   // Filter out non-operational roles (Unless they use PIN)
   const visibleEmployees = employees.filter(e => 
     e.role !== Role.SYSTEM_ADMIN && 
@@ -38,8 +43,58 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    
+    const handleOnline = () => { setIsOnline(true); handleSync(); };
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial Wake Lock Request
+    requestWakeLock();
+
+    return () => {
+        clearInterval(timer);
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+    };
   }, []);
+
+  // Screen Wake Lock
+  const requestWakeLock = async () => {
+      if ('wakeLock' in navigator) {
+          try {
+              const wakeLock = await (navigator as any).wakeLock.request('screen');
+              console.log('Screen Wake Lock active');
+              wakeLock.addEventListener('release', () => {
+                  console.log('Screen Wake Lock released');
+                  // Re-acquire on visibility change if needed, but usually release happens on tab switch
+              });
+          } catch (err: any) {
+              console.error(`${err.name}, ${err.message}`);
+          }
+      }
+  }
+
+  // Re-request wake lock when visibility changes (e.g. tablet screen turns back on)
+  useEffect(() => {
+      const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+              requestWakeLock();
+          }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  const handleSync = async () => {
+      setIsSyncing(true);
+      const count = await dbService.syncOfflineAttendance();
+      if (count > 0) {
+          alert(`Sincronizzate ${count} timbrature offline!`);
+      }
+      setIsSyncing(false);
+  }
 
   const hasNfcSupport = 'NDEFReader' in window;
 
@@ -199,6 +254,20 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
       >
         <ArrowLeft size={24} />
       </button>
+
+      {/* Online/Offline Status Indicator */}
+      <div className="absolute top-4 right-4 z-50">
+          {!isOnline ? (
+              <div className="flex items-center gap-2 bg-red-100 text-red-600 px-4 py-2 rounded-full font-bold shadow-md animate-pulse cursor-pointer" onClick={handleSync}>
+                  <CloudOff size={20} />
+                  <span>OFFLINE</span>
+              </div>
+          ) : (
+              <div className="flex items-center gap-2 text-green-500 opacity-50 text-sm">
+                  {isSyncing ? <RefreshCcw size={16} className="animate-spin"/> : <Wifi size={16} />}
+              </div>
+          )}
+      </div>
 
       {/* Header Logo Area */}
       <div className="mb-10 text-center">
