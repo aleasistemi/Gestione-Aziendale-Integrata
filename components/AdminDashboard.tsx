@@ -517,12 +517,19 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       }
       try {
           const data = await dbService.exportDatabase();
+          // Send structured object to Pabbly/Zapier/Make
+          const payload = {
+              filename: `backup_alea_${new Date().toISOString().split('T')[0]}.json`,
+              date: new Date().toISOString(),
+              backup_data: data // The full JSON string
+          };
+
           await fetch(settings.backupWebhookUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: data
+              body: JSON.stringify(payload)
           });
-          alert("Backup inviato correttamente al Webhook!");
+          alert("Backup inviato correttamente al Webhook! Controlla Pabbly.");
       } catch (e) {
           alert("Errore invio backup: " + e);
       }
@@ -1514,35 +1521,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                         </td></tr>))}</tbody></table></div>
                     </div>
                 )}
-            </div>
-        )}
-
-         {/* NFC WRITER MODAL */}
-         {isWritingNfc && (
-            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-6">
-                <div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center shadow-2xl relative">
-                    <button onClick={() => setIsWritingNfc(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={24}/></button>
-                    
-                    <div className="mb-6 flex justify-center">
-                        <div className={`p-6 rounded-full ${nfcWriteStatus === 'WRITING' ? 'bg-blue-100 animate-pulse' : nfcWriteStatus === 'SUCCESS' ? 'bg-green-100' : nfcWriteStatus === 'ERROR' ? 'bg-red-100' : 'bg-slate-100'}`}>
-                            <Wifi size={64} className={`${nfcWriteStatus === 'WRITING' ? 'text-blue-600' : nfcWriteStatus === 'SUCCESS' ? 'text-green-600' : nfcWriteStatus === 'ERROR' ? 'text-red-600' : 'text-slate-400'}`} />
-                        </div>
-                    </div>
-
-                    <h3 className="text-xl font-bold text-slate-800 mb-2">Scrivi Badge NFC</h3>
-                    <p className="text-slate-500 mb-6 font-medium">{isWritingNfc.name}</p>
-                    
-                    {nfcWriteStatus === 'IDLE' && <p className="text-sm text-slate-600 mb-4">In attesa di avvio...</p>}
-                    {nfcWriteStatus === 'WRITING' && (
-                        <div>
-                            <p className="font-bold text-blue-600 animate-pulse mb-2">AVVICINA IL BADGE AL TELEFONO</p>
-                            <p className="text-xs text-slate-400">Sto scrivendo il codice: <span className="font-mono bg-slate-100 px-1">{isWritingNfc.nfcCode || isWritingNfc.nfcCode2 || isWritingNfc.id}</span></p>
-                        </div>
-                    )}
-                    {nfcWriteStatus === 'SUCCESS' && <p className="font-bold text-green-600 text-lg">Badge scritto con successo!</p>}
-                    {nfcWriteStatus === 'ERROR' && <p className="font-bold text-red-600">Errore scrittura. Riprova.</p>}
-
-                </div>
             </div>
         )}
 
