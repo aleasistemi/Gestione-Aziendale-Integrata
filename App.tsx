@@ -6,7 +6,7 @@ import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
 import VehicleKiosk from './components/VehicleKiosk';
 import { AdminDashboard } from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Settings, Wifi, Truck, Play, AlertCircle, Laptop } from 'lucide-react';
+import { LayoutDashboard, LogOut, TerminalSquare, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Settings, Wifi, Truck, Play, AlertCircle, Laptop, Download } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -26,7 +26,7 @@ function App() {
   const [authTokenInput, setAuthTokenInput] = useState('');
   const [authError, setAuthError] = useState(false);
 
-  const [viewMode, setViewMode] = useState<ViewMode>('LOGIN');
+  const [viewMode, setViewMode] = useState<ViewMode>('STARTUP_SELECT');
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   
   // Login NFC State
@@ -77,7 +77,8 @@ function App() {
     // Check for Persistent Kiosk Mode
     const savedKioskMode = localStorage.getItem('kiosk_mode');
     if (savedKioskMode === 'ATTENDANCE') setViewMode('ATTENDANCE_KIOSK');
-    if (savedKioskMode === 'VEHICLE') setViewMode('VEHICLE_KIOSK');
+    else if (savedKioskMode === 'VEHICLE') setViewMode('VEHICLE_KIOSK');
+    else setViewMode('STARTUP_SELECT');
 
     refreshData();
     const handleStorageChange = () => refreshData();
@@ -93,6 +94,48 @@ function App() {
       clearInterval(clockInterval);
     };
   }, []);
+
+  // --- AUTOMATIC BACKUP SERVICE ---
+  // Checks every minute if it's 21:00 Mon-Fri and triggers backup
+  useEffect(() => {
+      const backupInterval = setInterval(() => {
+          const now = new Date();
+          const day = now.getDay(); // 0=Sun, 6=Sat
+          const hours = now.getHours();
+          const minutes = now.getMinutes();
+
+          // Mon(1) to Fri(5), at 21:00 (approx check between 21:00 and 21:01)
+          if (day >= 1 && day <= 5 && hours === 21 && minutes === 0) {
+              const lastBackup = localStorage.getItem('last_auto_backup');
+              const todayStr = now.toDateString();
+              
+              if (lastBackup !== todayStr) {
+                  console.log("Triggering Auto-Backup...");
+                  handleAutoBackup();
+                  localStorage.setItem('last_auto_backup', todayStr);
+              }
+          }
+      }, 60000); // Check every minute
+
+      return () => clearInterval(backupInterval);
+  }, []);
+
+  const handleAutoBackup = async () => {
+      try {
+          const data = await dbService.exportDatabase();
+          const blob = new Blob([data], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `backup_alea_AUTO_${new Date().toISOString().split('T')[0]}.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          console.log("Backup Automatico Eseguito");
+      } catch (e) {
+          console.error("Auto Backup Failed", e);
+      }
+  };
 
   const hasNfcSupport = 'NDEFReader' in window;
 
@@ -191,7 +234,7 @@ function App() {
   const handleLogin = (employee: Employee) => {
     setCurrentUser(employee);
     // Determine view based on role
-    if (employee.role === Role.WORKSHOP || employee.role === Role.EMPLOYEE) {
+    if (employee.role === Role.WORKSHOP || employee.role === Role.EMPLOYEE || employee.role === Role.WAREHOUSE) {
       setViewMode('WORKSHOP_PANEL');
     } else {
       setViewMode('DASHBOARD');
@@ -235,7 +278,7 @@ function App() {
 
   const handleExitKiosk = () => {
       localStorage.removeItem('kiosk_mode'); // Clear persistence
-      setViewMode('LOGIN');
+      setViewMode('STARTUP_SELECT'); // Go back to start
   }
 
   const handleLogout = () => {
@@ -402,6 +445,87 @@ function App() {
     )
   }
 
+  // --- STARTUP SELECT SCREEN ---
+  if (viewMode === 'STARTUP_SELECT') {
+      return (
+          <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+              <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl overflow-hidden p-8">
+                  <div className="text-center mb-10">
+                      <h1 className="text-4xl font-black text-[#EC1D25] tracking-tighter mb-2">ALEA Sistemi</h1>
+                      <p className="text-slate-500">Seleziona la modalità di avvio del dispositivo</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <button 
+                        onClick={() => {
+                            setTargetKioskMode('ATTENDANCE');
+                            setShowKioskMenu(true);
+                        }}
+                        className="p-8 bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 hover:border-blue-500 rounded-2xl flex flex-col items-center gap-4 transition group"
+                      >
+                          <div className="bg-blue-600 text-white p-6 rounded-full shadow-lg group-hover:scale-110 transition-transform">
+                              <Clock size={48} />
+                          </div>
+                          <h2 className="text-2xl font-bold text-slate-800">Totem Presenze</h2>
+                          <p className="text-slate-500 text-center text-sm">Modalità tablet fissa per timbratura ingresso/uscita dipendenti.</p>
+                      </button>
+
+                      <button 
+                        onClick={() => {
+                            setTargetKioskMode('VEHICLE');
+                            setShowKioskMenu(true);
+                        }}
+                        className="p-8 bg-orange-50 hover:bg-orange-100 border-2 border-orange-200 hover:border-orange-500 rounded-2xl flex flex-col items-center gap-4 transition group"
+                      >
+                          <div className="bg-orange-500 text-white p-6 rounded-full shadow-lg group-hover:scale-110 transition-transform">
+                              <Truck size={48} />
+                          </div>
+                          <h2 className="text-2xl font-bold text-slate-800">Totem Mezzi</h2>
+                          <p className="text-slate-500 text-center text-sm">App mobile/tablet per gestione ritiro e consegna auto aziendali.</p>
+                      </button>
+                  </div>
+
+                  <div className="mt-8 border-t pt-8">
+                      <button 
+                        onClick={() => setViewMode('LOGIN')}
+                        className="w-full p-4 bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition flex items-center justify-center gap-2 font-bold"
+                      >
+                          <Laptop size={20}/>
+                          Accedi al Gestionale (PC/Ufficio)
+                      </button>
+                  </div>
+              </div>
+
+              {/* SECURITY PIN MODAL FOR KIOSK */}
+              {showKioskMenu && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl flex flex-col">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-slate-800">Conferma Modalità</h3>
+                            <button onClick={() => {setShowKioskMenu(false); setKioskPin(''); setTargetKioskMode(null);}}><X size={24} className="text-slate-400"/></button>
+                        </div>
+                        
+                        <div className="flex-1 flex flex-col justify-center animate-fade-in">
+                            <p className="text-center text-slate-500 mb-2">PIN Sicurezza Amministratore</p>
+                            <div className="text-center text-3xl font-mono tracking-widest py-3 bg-slate-100 rounded-lg mb-6">
+                                {kioskPin.padEnd(4, '•').split('').map(c => c === '•' ? '•' : '*').join('')}
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                                {[1,2,3,4,5,6,7,8,9].map(n => (
+                                    <button key={n} onClick={() => setKioskPin(p => p.length < 4 ? p + n : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">{n}</button>
+                                ))}
+                                <button onClick={() => setKioskPin('')} className="p-3 bg-red-50 text-red-500 rounded"><Delete size={20} className="mx-auto"/></button>
+                                <button onClick={() => setKioskPin(p => p.length < 4 ? p + '0' : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">0</button>
+                                <button onClick={handleKioskEntry} className="p-3 bg-red-600 text-white rounded"><CheckCircle size={20} className="mx-auto"/></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+           )}
+          </div>
+      )
+  }
+
   if (viewMode === 'ATTENDANCE_KIOSK') {
     return (
       <AttendanceKiosk 
@@ -559,58 +683,16 @@ function App() {
                     </div>
                 </div>
            )}
-
-            {/* KIOSK MENU SELECTION */}
-           {showKioskMenu && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl flex flex-col">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold text-slate-800">Attiva Modalità Totem</h3>
-                            <button onClick={() => {setShowKioskMenu(false); setKioskPin(''); setTargetKioskMode(null);}}><X size={24} className="text-slate-400"/></button>
-                        </div>
-                        
-                        {!targetKioskMode ? (
-                            <div className="flex flex-col gap-4">
-                                <button onClick={() => setTargetKioskMode('ATTENDANCE')} className="p-4 bg-blue-50 hover:bg-blue-100 rounded-xl flex items-center gap-4 transition group">
-                                    <div className="bg-blue-500 text-white p-3 rounded-full group-hover:scale-110 transition-transform"><Clock size={24}/></div>
-                                    <div className="text-left"><h4 className="font-bold text-slate-800">Totem Presenze</h4><p className="text-xs text-slate-500">Per ingresso/uscita dipendenti</p></div>
-                                </button>
-                                <button onClick={() => setTargetKioskMode('VEHICLE')} className="p-4 bg-orange-50 hover:bg-orange-100 rounded-xl flex items-center gap-4 transition group">
-                                    <div className="bg-orange-500 text-white p-3 rounded-full group-hover:scale-110 transition-transform"><Truck size={24}/></div>
-                                    <div className="text-left"><h4 className="font-bold text-slate-800">Totem Parco Mezzi</h4><p className="text-xs text-slate-500">Per gestione auto aziendali</p></div>
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="flex-1 flex flex-col justify-center animate-fade-in">
-                                <p className="text-center text-slate-500 mb-2">PIN Sicurezza Amministratore</p>
-                                <div className="text-center text-3xl font-mono tracking-widest py-3 bg-slate-100 rounded-lg mb-6">
-                                    {kioskPin.padEnd(4, '•').split('').map(c => c === '•' ? '•' : '*').join('')}
-                                </div>
-                                <div className="grid grid-cols-3 gap-3">
-                                    {[1,2,3,4,5,6,7,8,9].map(n => (
-                                        <button key={n} onClick={() => setKioskPin(p => p.length < 4 ? p + n : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">{n}</button>
-                                    ))}
-                                    <button onClick={() => setKioskPin('')} className="p-3 bg-red-50 text-red-500 rounded"><Delete size={20} className="mx-auto"/></button>
-                                    <button onClick={() => setKioskPin(p => p.length < 4 ? p + '0' : p)} className="p-3 bg-slate-50 rounded font-bold hover:bg-blue-50">0</button>
-                                    <button onClick={handleKioskEntry} className="p-3 bg-red-600 text-white rounded"><CheckCircle size={20} className="mx-auto"/></button>
-                                </div>
-                                <button onClick={() => setTargetKioskMode(null)} className="mt-4 text-sm text-slate-400 hover:underline text-center">Indietro</button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-           )}
-
         </div>
 
-        {/* Bottom Right Tools */}
+        {/* Bottom Right Tools - Only Back if not Login */}
         <div className="absolute bottom-4 right-4 flex gap-2">
-            <button 
-                onClick={() => setShowKioskMenu(true)}
+             <button 
+                onClick={() => setViewMode('STARTUP_SELECT')}
                 className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-slate-800 rounded-full transition shadow-sm"
-                title="Attiva Modalità Totem"
+                title="Torna alla Selezione"
             >
-                <TerminalSquare size={16} />
+                <ArrowRight size={16} className="rotate-180"/>
             </button>
         </div>
 
@@ -633,7 +715,7 @@ function App() {
             </div>
             <div className="flex items-center gap-4">
               {/* Button to switch views for Admin/Office roles */}
-              {!isWorkshopPanel && (currentUser?.role !== Role.WORKSHOP && currentUser?.role !== Role.EMPLOYEE) && (
+              {!isWorkshopPanel && (currentUser?.role !== Role.WORKSHOP && currentUser?.role !== Role.EMPLOYEE && currentUser?.role !== Role.WAREHOUSE) && (
                  <button 
                     onClick={() => setViewMode('WORKSHOP_PANEL')}
                     className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-slate-200 transition"
@@ -641,7 +723,7 @@ function App() {
                     <Wrench size={16} /> Pannello Operativo
                  </button>
               )}
-               {isWorkshopPanel && (currentUser?.role !== Role.WORKSHOP && currentUser?.role !== Role.EMPLOYEE) && (
+               {isWorkshopPanel && (currentUser?.role !== Role.WORKSHOP && currentUser?.role !== Role.EMPLOYEE && currentUser?.role !== Role.WAREHOUSE) && (
                  <button 
                     onClick={() => setViewMode('DASHBOARD')}
                     className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-slate-200 transition"

@@ -7,6 +7,7 @@ export enum Role {
   SALES = 'Commerciale', // Gestione Commesse
   TECHNICAL = 'Tecnico', // Gestione Commesse come Sales
   WORKSHOP = 'Officina', // Operativi (include Magazzino)
+  WAREHOUSE = 'Magazzino', // Nuovo ruolo specifico
   EMPLOYEE = 'Dipendente' // Generico
 }
 
@@ -59,6 +60,7 @@ export interface AttendanceRecord {
   employeeId: string;
   timestamp: string; // ISO String
   type: 'ENTRATA' | 'USCITA';
+  isOfflineSync?: boolean; // Flag per capire se è stato sincronizzato dopo
 }
 
 export interface WorkLog {
@@ -127,7 +129,7 @@ export interface GlobalSettings {
   permessoSnapMinutes?: number; // Default 15
 }
 
-export type ViewMode = 'LOGIN' | 'ATTENDANCE_KIOSK' | 'VEHICLE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';
+export type ViewMode = 'STARTUP_SELECT' | 'LOGIN' | 'ATTENDANCE_KIOSK' | 'VEHICLE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';
 
 // Helper type for the Database
 export interface AppDatabase {
@@ -164,7 +166,9 @@ export interface NDEFReadingEvent extends Event {
 }
 
 export interface NDEFReader {
-  scan: () => Promise<void>;
+  scan: (options?: any) => Promise<void>;
+  // Added write method to support writing to NFC tags
+  write: (message: any, options?: any) => Promise<void>;
   onreading: ((this: NDEFReader, event: NDEFReadingEvent) => any) | null;
   onreadingerror: ((this: NDEFReader, event: Event) => any) | null;
 }
