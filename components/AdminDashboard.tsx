@@ -1455,7 +1455,19 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                         <div><label className="block text-sm font-medium text-slate-700">Scadenza</label><input type="date" className="w-full border p-2 rounded" value={isEditingJob.deadline || ''} onChange={e => setIsEditingJob({...isEditingJob, deadline: e.target.value})} /></div>
                                         <div><label className="block text-sm font-medium text-slate-700">Data Inizio</label><input type="date" className="w-full border p-2 rounded" value={isEditingJob.creationDate || new Date().toISOString().split('T')[0]} onChange={e => setIsEditingJob({...isEditingJob, creationDate: e.target.value})} /></div>
                                         <div><label className="block text-sm font-medium text-slate-700">Priorità</label><div className="flex gap-1 mt-2">{[1,2,3,4,5].map(star => (<Star key={star} size={24} className={`cursor-pointer ${star <= (isEditingJob.priority || 3) ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} onClick={() => setIsEditingJob({...isEditingJob, priority: star})}/>))}</div></div>
-                                        <div><label className="block text-sm font-medium text-slate-700 mb-1">Assegna a Operatore</label><select className="w-full border p-2 rounded" value={isEditingJob.suggestedOperatorId || ''} onChange={e => setIsEditingJob({...isEditingJob, suggestedOperatorId: e.target.value})}><option value="">Nessuno</option>{employees.filter(e => e.role === Role.WORKSHOP).map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select></div><div className="col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Note Interne</label><textarea className="w-full border p-2 rounded resize-y min-h-[80px]" value={isEditingJob.notes || ''} onChange={e => setIsEditingJob({...isEditingJob, notes: e.target.value})} placeholder="Eventuali note tecniche o amministrative..."/></div>
+                                        
+                                        {/* OPERATOR ASSIGNMENT FILTER UPDATED HERE */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Assegna a Operatore</label>
+                                            <select className="w-full border p-2 rounded" value={isEditingJob.suggestedOperatorId || ''} onChange={e => setIsEditingJob({...isEditingJob, suggestedOperatorId: e.target.value})}>
+                                                <option value="">Nessuno</option>
+                                                {employees.filter(e => e.role !== Role.SYSTEM_ADMIN && e.role !== Role.DIRECTION && e.role !== Role.ADMIN && e.role !== Role.ACCOUNTING).map(emp => (
+                                                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Note Interne</label><textarea className="w-full border p-2 rounded resize-y min-h-[80px]" value={isEditingJob.notes || ''} onChange={e => setIsEditingJob({...isEditingJob, notes: e.target.value})} placeholder="Eventuali note tecniche o amministrative..."/></div>
                                     </div>
                                     <div className="mt-6 flex justify-end gap-2"><button onClick={() => setIsEditingJob(null)} className="px-4 py-2 border rounded hover:bg-slate-50">Annulla</button><button onClick={handleSaveJobForm} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva</button></div>
                                 </div>
