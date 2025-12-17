@@ -1376,6 +1376,15 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                     />
                                     <Search className="absolute left-3 top-2 text-slate-400" size={16}/>
                                 </div>
+
+                                <div className="flex items-center gap-2 text-sm bg-white p-1 rounded border border-slate-300">
+                                    <Calendar size={14} className="text-slate-400 ml-1"/>
+                                    <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="outline-none text-slate-600 w-28 text-xs"/>
+                                    <span className="text-slate-300">-</span>
+                                    <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="outline-none text-slate-600 w-28 text-xs"/>
+                                    {(filterStartDate || filterEndDate) && <button onClick={() => {setFilterStartDate(''); setFilterEndDate('')}}><X size={14}/></button>}
+                                </div>
+
                                 <select 
                                     value={viewArchiveYear} 
                                     onChange={(e) => setViewArchiveYear(e.target.value)}
