@@ -146,11 +146,18 @@ function App() {
           
           if (settings.backupWebhookUrl) {
               console.log("Sending backup to Webhook...");
-              // Send to Pabbly/Zapier/Make
+              // Send structured object to Pabbly/Zapier/Make
+              // This structure makes it easier to map in no-code tools
+              const payload = {
+                  filename: `backup_alea_${new Date().toISOString().split('T')[0]}.json`,
+                  date: new Date().toISOString(),
+                  backup_data: data // The full JSON string
+              };
+
               await fetch(settings.backupWebhookUrl, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: data
+                  body: JSON.stringify(payload)
               });
               console.log("Backup inviato al Cloud con successo.");
           } else {
