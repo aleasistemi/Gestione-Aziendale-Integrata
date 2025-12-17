@@ -118,20 +118,33 @@ function App() {
       }, 60000); // Check every minute
 
       return () => clearInterval(backupInterval);
-  }, []);
+  }, [settings]); // Depend on settings to get webhook url
 
   const handleAutoBackup = async () => {
       try {
           const data = await dbService.exportDatabase();
-          const blob = new Blob([data], { type: "application/json" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `backup_alea_AUTO_${new Date().toISOString().split('T')[0]}.json`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          console.log("Backup Automatico Eseguito");
+          
+          if (settings.backupWebhookUrl) {
+              console.log("Sending backup to Webhook...");
+              // Send to Pabbly/Zapier
+              await fetch(settings.backupWebhookUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: data
+              });
+              console.log("Backup inviato a Pabbly con successo.");
+          } else {
+              // Fallback to Local Download
+              const blob = new Blob([data], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `backup_alea_AUTO_${new Date().toISOString().split('T')[0]}.json`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              console.log("Backup Automatico Locale Eseguito (Nessun Webhook)");
+          }
       } catch (e) {
           console.error("Auto Backup Failed", e);
       }
