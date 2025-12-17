@@ -517,17 +517,17 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       }
       try {
           const data = await dbService.exportDatabase();
-          // Send structured object to Pabbly/Zapier/Make
-          const payload = {
-              filename: `backup_alea_${new Date().toISOString().split('T')[0]}.json`,
-              date: new Date().toISOString(),
-              backup_data: data // The full JSON string
-          };
+          // Use FormData to send as a file attachment
+          const blob = new Blob([data], { type: 'application/json' });
+          const filename = `backup_alea_${new Date().toISOString().split('T')[0]}.json`;
+          const formData = new FormData();
+          formData.append('file', blob, filename);
+          formData.append('filename', filename);
+          formData.append('type', 'manual_test');
 
           await fetch(settings.backupWebhookUrl, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
+              body: formData
           });
           alert("Backup inviato correttamente al Webhook! Controlla Pabbly.");
       } catch (e) {
