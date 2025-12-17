@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings, Vehicle, VehicleLog } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer, Search, Archive, RotateCcw, Truck, MapPin, User, ChevronLeft, ChevronRight, Wifi } from 'lucide-react';
+import { Download, Users, Briefcase, TrendingUp, AlertTriangle, Plus, Edit2, X, FileSpreadsheet, Calendar, Clock, AlertCircle, CheckCircle2, Loader2, List, Info, Printer, Pencil, Save, Trash2, CheckSquare, Square, Settings, ArrowUp, ArrowDown, LayoutDashboard, Wrench, Filter, Scan, KeyRound, Database, Upload, MoveVertical, Star, Package, Key, Eraser, BrainCircuit, Timer, Search, Archive, RotateCcw, Truck, MapPin, User, ChevronLeft, ChevronRight, Wifi, UploadCloud } from 'lucide-react';
 import { analyzeBusinessData } from '../services/geminiService';
 import { read, utils, writeFile } from 'xlsx';
 import { dbService } from '../services/db';
@@ -102,10 +102,31 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const canManageEmployees = currentUserRole === Role.DIRECTION || currentUserRole === Role.SYSTEM_ADMIN;
 
   const getAllowedTabs = () => {
+      // 1. GOD MODE BYPASS: Always allow System Admin full access regardless of DB
       if (isSystem) return ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE', 'CONFIG'];
+      
+      // 2. DIRECTION BYPASS: Always allow Direction full access (except Config)
+      if (currentUserRole === Role.DIRECTION) return ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE'];
+
+      // 3. CHECK DB PERMISSIONS (If exist)
       const rolePerms = permissions[currentUserRole];
-      if (rolePerms) return rolePerms;
-      return ['OVERVIEW'];
+      if (rolePerms && rolePerms.length > 0) return rolePerms;
+
+      // 4. ROBUST FALLBACKS (If DB is empty/loading or permissions not set)
+      switch(currentUserRole) {
+          case Role.ADMIN:
+          case Role.ACCOUNTING:
+              return ['OVERVIEW', 'HR', 'FLEET', 'JOBS', 'MANAGE'];
+          case Role.SALES:
+          case Role.TECHNICAL:
+              return ['OVERVIEW', 'JOBS', 'MANAGE', 'FLEET', 'AI'];
+          case Role.WORKSHOP:
+          case Role.WAREHOUSE:
+          case Role.EMPLOYEE:
+              return ['OVERVIEW']; // Basic view
+          default:
+              return ['OVERVIEW'];
+      }
   }
 
   const allowedTabsList = getAllowedTabs();
@@ -151,10 +172,11 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const [fleetSelectedDate, setFleetSelectedDate] = useState<string | null>(null);
 
   useEffect(() => {
+     // Ensure activeTab is valid for current role
      if (availableTabs.length > 0 && !availableTabs.find(t => t.id === activeTab)) {
          setActiveTab(availableTabs[0].id);
      }
-  }, [currentUserRole, permissions]);
+  }, [currentUserRole, permissions, availableTabs]);
 
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiResponse, setAiResponse] = useState('');
@@ -487,6 +509,24 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
         alert("Errore nel ripristino del backup. File non valido.");
     }
   };
+
+  const handleCloudBackupTest = async () => {
+      if (!settings.backupWebhookUrl) {
+          alert("Inserisci prima un URL Webhook valido (Pabbly/Zapier).");
+          return;
+      }
+      try {
+          const data = await dbService.exportDatabase();
+          await fetch(settings.backupWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: data
+          });
+          alert("Backup inviato correttamente al Webhook!");
+      } catch (e) {
+          alert("Errore invio backup: " + e);
+      }
+  }
 
   const handleResetJobs = async () => {
       if (window.confirm("ATTENZIONE: Stai per eliminare TUTTE le commesse e le registrazioni delle ore lavorate.\n\nQuesta azione NON è reversibile.\n\nSei sicuro di voler procedere per pulire l'archivio?")) {
@@ -957,6 +997,8 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
       <div className="min-h-[400px]">
         
+        {/* ... OVERVIEW, JOBS, HR, FLEET, AI Tabs content remains unchanged ... */}
+        
         {activeTab === 'OVERVIEW' && (
              <>
             <div className="flex justify-between items-center mb-6 print:hidden bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -1068,6 +1110,8 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
             </>
         )}
         
+        {/* ... JOBS, HR, FLEET, AI ... (unchanged content but included in final structure) */}
+        
         {activeTab === 'JOBS' && (
              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-50 gap-4">
@@ -1146,6 +1190,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
             </div>
         )}
 
+        {/* ... HR, FLEET, AI ... */}
         {activeTab === 'HR' && (
              <div className="space-y-6">
                 <div className="flex items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
@@ -1168,7 +1213,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
              </div>
         )}
 
-        {/* --- NEW FLEET TAB WITH CALENDAR --- */}
         {activeTab === 'FLEET' && (
             <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1508,7 +1552,25 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                     <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Settings className="text-slate-600"/> Impostazioni Globali</h2>
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 mb-6"><div><h3 className="font-bold text-slate-800 flex items-center gap-2"><Scan size={20}/> Modalità Badge NFC</h3><p className="text-sm text-slate-500">Se attiva, nasconde la lista operatori e richiede la scansione del badge o PIN.</p></div><button onClick={() => onSaveSettings({ ...settings, nfcEnabled: !settings.nfcEnabled })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.nfcEnabled ? 'bg-blue-600' : 'bg-slate-200'}`}><span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${settings.nfcEnabled ? 'translate-x-6' : 'translate-x-1'}`}/></button></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6"><div><label className="block text-sm font-medium text-slate-700 mb-1">Scatto Straordinari (minuti)</label><input type="number" className="w-full border p-2 rounded" value={settings.overtimeSnapMinutes || 30} onChange={(e) => onSaveSettings({...settings, overtimeSnapMinutes: parseInt(e.target.value)})} /><p className="text-xs text-slate-500 mt-1">Gli straordinari serali verranno conteggiati a blocchi di questi minuti.</p></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Scatto Permessi/Uscita Anticipata (minuti)</label><input type="number" className="w-full border p-2 rounded" value={settings.permessoSnapMinutes || 15} onChange={(e) => onSaveSettings({...settings, permessoSnapMinutes: parseInt(e.target.value)})} /><p className="text-xs text-slate-500 mt-1">L'uscita anticipata verrà dedotta solo al raggiungimento di questo scatto.</p></div></div>
-                    <div className="mb-6"><h3 className="font-bold text-slate-800 flex items-center gap-2"><Key size={20}/> Gemini API Key</h3><p className="text-sm text-slate-500 mb-2">Inserisci la chiave API di Google Gemini per abilitare l'AI Analyst.</p><div className="flex gap-2"><input type="password" value={settings.geminiApiKey || ''} onChange={(e) => onSaveSettings({...settings, geminiApiKey: e.target.value})} placeholder="sk-..." className="flex-1 border p-2 rounded"/></div></div>
+                    
+                    <div className="mb-6 border-b pb-6">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-2"><Key size={20}/> Integrazioni Esterne</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Gemini API Key (AI Analyst)</label>
+                                <input type="password" value={settings.geminiApiKey || ''} onChange={(e) => onSaveSettings({...settings, geminiApiKey: e.target.value})} placeholder="sk-..." className="w-full border p-2 rounded"/>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Webhook URL Backup (Pabbly/Zapier)</label>
+                                <div className="flex gap-2">
+                                    <input type="text" value={settings.backupWebhookUrl || ''} onChange={(e) => onSaveSettings({...settings, backupWebhookUrl: e.target.value})} placeholder="https://connect.pabbly.com/..." className="flex-1 border p-2 rounded"/>
+                                    <button onClick={handleCloudBackupTest} className="bg-purple-50 text-purple-600 px-3 py-2 rounded border border-purple-200 hover:bg-purple-100 flex items-center gap-2 transition" title="Test Invio Cloud"><UploadCloud size={20}/></button>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">Se inserito, il backup automatico delle 21:00 verrà inviato a questo URL invece di essere scaricato.</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <div>
                         <h3 className="font-bold text-slate-800 mb-4">Gestione Fasi Lavorative</h3>
                         <div className="flex gap-2 mb-4">
