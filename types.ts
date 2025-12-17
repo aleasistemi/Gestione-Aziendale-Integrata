@@ -127,6 +127,7 @@ export interface GlobalSettings {
   geminiApiKey?: string; // Custom API Key
   overtimeSnapMinutes?: number; // Default 30
   permessoSnapMinutes?: number; // Default 15
+  backupWebhookUrl?: string; // URL Pabbly/Zapier for backups
 }
 
 export type ViewMode = 'STARTUP_SELECT' | 'LOGIN' | 'ATTENDANCE_KIOSK' | 'VEHICLE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';

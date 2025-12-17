@@ -78,7 +78,27 @@ function App() {
     const savedKioskMode = localStorage.getItem('kiosk_mode');
     if (savedKioskMode === 'ATTENDANCE') setViewMode('ATTENDANCE_KIOSK');
     else if (savedKioskMode === 'VEHICLE') setViewMode('VEHICLE_KIOSK');
-    else setViewMode('STARTUP_SELECT');
+    else {
+        // Check for Persistent User Session (Standard Mode)
+        const storedUser = localStorage.getItem('current_user_json');
+        if (storedUser) {
+            try {
+                const u = JSON.parse(storedUser);
+                setCurrentUser(u);
+                // Redirect to correct dashboard based on role
+                if (u.role === Role.WORKSHOP || u.role === Role.EMPLOYEE || u.role === Role.WAREHOUSE) {
+                    setViewMode('WORKSHOP_PANEL');
+                } else {
+                    setViewMode('DASHBOARD');
+                }
+            } catch(e) { 
+                console.error("Failed to restore user session", e);
+                setViewMode('STARTUP_SELECT');
+            }
+        } else {
+            setViewMode('STARTUP_SELECT');
+        }
+    }
 
     refreshData();
     const handleStorageChange = () => refreshData();
@@ -118,20 +138,33 @@ function App() {
       }, 60000); // Check every minute
 
       return () => clearInterval(backupInterval);
-  }, []);
+  }, [settings]); // Depend on settings to get webhook url
 
   const handleAutoBackup = async () => {
       try {
           const data = await dbService.exportDatabase();
-          const blob = new Blob([data], { type: "application/json" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `backup_alea_AUTO_${new Date().toISOString().split('T')[0]}.json`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          console.log("Backup Automatico Eseguito");
+          
+          if (settings.backupWebhookUrl) {
+              console.log("Sending backup to Webhook...");
+              // Send to Pabbly/Zapier/Make
+              await fetch(settings.backupWebhookUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: data
+              });
+              console.log("Backup inviato al Cloud con successo.");
+          } else {
+              // Fallback to Local Download
+              const blob = new Blob([data], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `backup_alea_AUTO_${new Date().toISOString().split('T')[0]}.json`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              console.log("Backup Automatico Locale Eseguito (Nessun Webhook)");
+          }
       } catch (e) {
           console.error("Auto Backup Failed", e);
       }
@@ -233,6 +266,9 @@ function App() {
 
   const handleLogin = (employee: Employee) => {
     setCurrentUser(employee);
+    // Persist session
+    localStorage.setItem('current_user_json', JSON.stringify(employee));
+
     // Determine view based on role
     if (employee.role === Role.WORKSHOP || employee.role === Role.EMPLOYEE || employee.role === Role.WAREHOUSE) {
       setViewMode('WORKSHOP_PANEL');
@@ -283,6 +319,7 @@ function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    localStorage.removeItem('current_user_json');
     setViewMode('LOGIN');
   };
 
