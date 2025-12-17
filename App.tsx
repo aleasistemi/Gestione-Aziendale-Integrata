@@ -1,24 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Employee, Job, WorkLog, AttendanceRecord, Role, 
-  DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, 
-  Vehicle, VehicleLog, ViewMode, JobStatus 
-} from './types';
-import { dbService } from './services/db';
-import { 
-  Clock, Truck, Laptop, Lock, ArrowRight, Scan, 
-  Play, AlertCircle, KeyRound, Loader2, Delete, CheckCircle, X 
-} from 'lucide-react';
-import AttendanceKiosk from './components/AttendanceKiosk';
-import VehicleKiosk from './components/VehicleKiosk';
-import WorkshopPanel from './components/WorkshopPanel';
-import AdminDashboard from './components/AdminDashboard';
 
-const App: React.FC = () => {
-  const [viewMode, setViewMode] = useState<ViewMode>('STARTUP_SELECT');
-  const [currentUser, setCurrentUser] = useState<Employee | null>(null);
-  
-  // Data State
+import React, { useState, useEffect, useRef } from 'react';
+import { Employee, Job, WorkLog, AttendanceRecord, ViewMode, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, JobStatus, Vehicle, VehicleLog } from './types';
+import { dbService } from './services/db';
+import AttendanceKiosk from './components/AttendanceKiosk';
+import WorkshopPanel from './components/WorkshopPanel';
+import VehicleKiosk from './components/VehicleKiosk';
+import { AdminDashboard } from './components/AdminDashboard';
+import { LayoutDashboard, LogOut, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Truck, Play, AlertCircle, Laptop } from 'lucide-react';
+
+function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [logs, setLogs] = useState<WorkLog[]>([]);
@@ -26,32 +16,37 @@ const App: React.FC = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [vehicleLogs, setVehicleLogs] = useState<VehicleLog[]>([]);
   const [justifications, setJustifications] = useState<DayJustification[]>([]);
-  const [customPrompts, setCustomPrompts] = useState<AIQuickPrompt[]>([]);
+  const [aiPrompts, setAiPrompts] = useState<AIQuickPrompt[]>([]);
   const [permissions, setPermissions] = useState<RolePermissions>({});
   const [settings, setSettings] = useState<GlobalSettings>({ nfcEnabled: false, workPhases: [] });
-  
   const [loading, setLoading] = useState(true);
-  const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Auth State
+  // Auth & Navigation
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authError, setAuthError] = useState(false);
   const [authTokenInput, setAuthTokenInput] = useState('');
+  const [authError, setAuthError] = useState(false);
 
-  // UI State
-  const [showKioskMenu, setShowKioskMenu] = useState(false);
-  const [targetKioskMode, setTargetKioskMode] = useState<string | null>(null);
-  const [kioskPin, setKioskPin] = useState('');
+  const [viewMode, setViewMode] = useState<ViewMode>('STARTUP_SELECT');
+  const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   
+  // Login NFC State
+  const [scanValue, setScanValue] = useState('');
+  const loginInputRef = useRef<HTMLInputElement>(null);
+  const [nfcStatus, setNfcStatus] = useState<'IDLE' | 'LISTENING' | 'ERROR' | 'UNSUPPORTED'>('IDLE');
+
   const [showLoginPinPad, setShowLoginPinPad] = useState(false);
   const [loginPin, setLoginPin] = useState('');
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
-  
-  // NFC / Scanner State
-  const [nfcStatus, setNfcStatus] = useState<'IDLE' | 'LISTENING' | 'ERROR' | 'UNSUPPORTED'>('IDLE');
-  const [scanValue, setScanValue] = useState('');
-  const loginInputRef = useRef<HTMLInputElement>(null);
 
+  // Clock State for Login Screen
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Kiosk Mode Protection
+  const [showKioskMenu, setShowKioskMenu] = useState(false);
+  const [kioskPin, setKioskPin] = useState('');
+  const [targetKioskMode, setTargetKioskMode] = useState<'ATTENDANCE' | 'VEHICLE' | null>(null);
+
+  // Load Data
   const refreshData = async () => {
     try {
       const data = await dbService.getAllData();
@@ -62,25 +57,23 @@ const App: React.FC = () => {
       setVehicles(data.vehicles);
       setVehicleLogs(data.vehicleLogs);
       setJustifications(data.justifications);
-      setCustomPrompts(data.customPrompts);
+      setAiPrompts(data.customPrompts);
       setPermissions(data.permissions);
       setSettings(data.settings);
     } catch (error) {
-      console.error("Error refreshing data:", error);
+      console.error("Failed to load data", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    if (token === 'ALEASISTEMI') {
-        setIsAuthenticated(true);
+    const storedToken = localStorage.getItem('auth_token');
+    if (storedToken === 'ALEASISTEMI') {
+      setIsAuthenticated(true);
     }
 
     const savedKioskMode = localStorage.getItem('kiosk_mode');
-    const savedViewMode = localStorage.getItem('saved_view_mode');
-
     if (savedKioskMode === 'ATTENDANCE') setViewMode('ATTENDANCE_KIOSK');
     else if (savedKioskMode === 'VEHICLE') setViewMode('VEHICLE_KIOSK');
     else {
@@ -98,8 +91,6 @@ const App: React.FC = () => {
                 console.error("Failed to restore user session", e);
                 setViewMode('STARTUP_SELECT');
             }
-        } else if (savedViewMode === 'LOGIN') {
-            setViewMode('LOGIN');
         } else {
             setViewMode('STARTUP_SELECT');
         }
@@ -146,10 +137,15 @@ const App: React.FC = () => {
           const data = await dbService.exportDatabase();
           
           if (settings.backupWebhookUrl) {
+              console.log("Sending backup to Webhook...");
+              
               const blob = new Blob([data], { type: 'application/json' });
               const filename = `backup_alea_${new Date().toISOString().split('T')[0]}.json`;
               const formData = new FormData();
+              
+              // --- FIX PABBLY: SOLO FILE ---
               formData.append('file', blob, filename);
+              // Niente json_content
               
               await fetch(settings.backupWebhookUrl, {
                   method: 'POST',
@@ -165,6 +161,7 @@ const App: React.FC = () => {
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
+              console.log("Backup Automatico Locale Eseguito (Nessun Webhook)");
           }
       } catch (e) {
           console.error("Auto Backup Failed", e);
@@ -490,10 +487,7 @@ const App: React.FC = () => {
                   </div>
                   <div className="mt-8 border-t pt-8">
                       <button 
-                        onClick={() => { 
-                            localStorage.setItem('saved_view_mode', 'LOGIN');
-                            setViewMode('LOGIN'); 
-                        }}
+                        onClick={() => setViewMode('LOGIN')}
                         className="w-full p-4 bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition flex items-center justify-center gap-2 font-bold"
                       >
                           <Laptop size={20}/> Accedi al Gestionale (PC/Ufficio)
@@ -675,10 +669,7 @@ const App: React.FC = () => {
         </div>
         <div className="absolute bottom-4 right-4 flex gap-2">
              <button 
-                onClick={() => {
-                    localStorage.removeItem('saved_view_mode');
-                    setViewMode('STARTUP_SELECT');
-                }}
+                onClick={() => setViewMode('STARTUP_SELECT')}
                 className="p-2 bg-white/50 hover:bg-white text-slate-400 hover:text-slate-800 rounded-full transition shadow-sm"
                 title="Torna alla Selezione"
             >
@@ -689,43 +680,94 @@ const App: React.FC = () => {
     );
   }
 
-  if (viewMode === 'WORKSHOP_PANEL' && currentUser) {
-      return (
-          <WorkshopPanel 
-              currentUser={currentUser}
-              jobs={jobs}
-              logs={logs}
-              onAddLog={addWorkLog}
-              onDeleteLog={deleteWorkLog}
-              onUpdateLog={updateWorkLog}
-              workPhases={settings.workPhases}
-              onUpdateJobStatus={handleUpdateJobStatus}
-          />
-      );
-  }
-
+  const isWorkshopPanel = viewMode === 'WORKSHOP_PANEL';
+  
   return (
-      <AdminDashboard 
-          currentUser={currentUser}
-          jobs={jobs}
-          logs={logs}
-          employees={employees}
-          attendance={attendance}
-          vehicles={vehicles}
-          vehicleLogs={vehicleLogs}
-          justifications={justifications}
-          customPrompts={customPrompts}
-          settings={settings}
-          permissions={permissions}
-          onSaveJob={handleSaveJob}
-          onSaveEmployee={handleSaveEmployee}
-          onSaveSettings={handleSaveSettings}
-          onSavePermissions={handleSavePermissions}
-          onSaveAiPrompts={handleSaveAiPrompts}
-          onSaveJustification={handleSaveJustification}
-          onLogout={handleLogout}
-      />
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <nav className="bg-white border-b border-slate-200 sticky top-0 z-30 print:hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex items-center gap-2">
+              <LayoutDashboard className="text-blue-600" />
+              <span className="font-bold text-xl text-slate-800">
+                {isWorkshopPanel ? 'Pannello Operativo' : 'Dashboard Gestionale'}
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              {!isWorkshopPanel && (currentUser?.role !== Role.WORKSHOP && currentUser?.role !== Role.EMPLOYEE && currentUser?.role !== Role.WAREHOUSE) && (
+                 <button 
+                    onClick={() => setViewMode('WORKSHOP_PANEL')}
+                    className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-slate-200 transition"
+                 >
+                    <Wrench size={16} /> Pannello Operativo
+                 </button>
+              )}
+               {isWorkshopPanel && (currentUser?.role !== Role.WORKSHOP && currentUser?.role !== Role.EMPLOYEE && currentUser?.role !== Role.WAREHOUSE) && (
+                 <button 
+                    onClick={() => setViewMode('DASHBOARD')}
+                    className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-slate-200 transition"
+                 >
+                    <LayoutDashboard size={16} /> Torna alla Dashboard
+                 </button>
+              )}
+
+              <div className="text-right hidden md:block">
+                <p className="text-sm font-medium text-slate-900">{currentUser?.name}</p>
+                <p className="text-xs text-slate-500">{currentUser?.department} ({currentUser?.role})</p>
+              </div>
+              <button 
+                onClick={handleLogout}
+                className="p-2 text-slate-400 hover:text-red-600 transition bg-slate-50 hover:bg-red-50 rounded-full"
+                title="Logout"
+              >
+                <LogOut size={20} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <main className="flex-1 overflow-y-auto">
+        {!isWorkshopPanel ? (
+          <AdminDashboard 
+            jobs={jobs} 
+            logs={logs} 
+            employees={employees}
+            attendance={attendance}
+            vehicles={vehicles}
+            vehicleLogs={vehicleLogs}
+            justifications={justifications}
+            customPrompts={aiPrompts}
+            permissions={permissions}
+            onSaveJob={handleSaveJob}
+            onSaveEmployee={handleSaveEmployee}
+            onSaveJustification={handleSaveJustification}
+            onSaveAiPrompts={handleSaveAiPrompts}
+            onSavePermissions={handleSavePermissions}
+            onUpdateLog={updateWorkLog}
+            currentUserRole={currentUser?.role || Role.EMPLOYEE}
+            settings={settings}
+            onSaveSettings={handleSaveSettings}
+            onSaveAttendance={addAttendanceRecord}
+            onDeleteAttendance={deleteAttendanceRecord}
+            onSaveVehicle={handleSaveVehicle}
+            onDeleteVehicle={handleDeleteVehicle}
+          />
+        ) : (
+          <WorkshopPanel 
+            currentUser={currentUser!}
+            jobs={jobs}
+            logs={logs}
+            onAddLog={addWorkLog}
+            onDeleteLog={deleteWorkLog}
+            onUpdateLog={updateWorkLog}
+            workPhases={settings.workPhases}
+            onUpdateJobStatus={handleUpdateJobStatus}
+          />
+        )}
+      </main>
+    </div>
   );
-};
+}
 
 export default App;
