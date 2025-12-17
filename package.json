@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "cap:add:android": "npx cap add android",
-    "cap:sync": "npm run build && npx cap sync",
-    "cap:open:android": "npx cap open android"
+    "init:android": "npm install @capacitor/android @capacitor/core @capacitor/cli && npx cap init AleaApp com.aleasistemi.gestionale --web-dir=dist",
+    "build:android": "npm run build && npx cap add android",
+    "sync:android": "npm run build && npx cap sync",
+    "open:android": "npx cap open android"
   },
   "dependencies": {
     "@capacitor/android": "^5.6.0",
