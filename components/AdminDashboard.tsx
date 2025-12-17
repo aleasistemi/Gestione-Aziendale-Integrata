@@ -99,12 +99,23 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   // Permissions Logic
   const isGodMode = currentUserRole === Role.SYSTEM_ADMIN || currentUserRole === Role.DIRECTION;
   const isSystem = currentUserRole === Role.SYSTEM_ADMIN;
-  const canManageEmployees = currentUserRole === Role.DIRECTION || currentUserRole === Role.SYSTEM_ADMIN;
-
+  
   const getAllowedTabs = () => {
+      // 1. Always allow System Admin full access
       if (isSystem) return ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE', 'CONFIG'];
+      
+      // 2. Always allow Direction full access (except Config)
+      if (currentUserRole === Role.DIRECTION) return ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE'];
+
+      // 3. Check DB Permissions
       const rolePerms = permissions[currentUserRole];
-      if (rolePerms) return rolePerms;
+      if (rolePerms && rolePerms.length > 0) return rolePerms;
+
+      // 4. Fallback Defaults (if DB is empty or loading)
+      if (currentUserRole === Role.ADMIN || currentUserRole === Role.ACCOUNTING) return ['HR', 'FLEET'];
+      if (currentUserRole === Role.SALES || currentUserRole === Role.TECHNICAL) return ['OVERVIEW', 'JOBS', 'MANAGE'];
+      
+      // Default for others
       return ['OVERVIEW'];
   }
 
@@ -151,10 +162,11 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const [fleetSelectedDate, setFleetSelectedDate] = useState<string | null>(null);
 
   useEffect(() => {
+     // Ensure activeTab is valid for current role
      if (availableTabs.length > 0 && !availableTabs.find(t => t.id === activeTab)) {
          setActiveTab(availableTabs[0].id);
      }
-  }, [currentUserRole, permissions]);
+  }, [currentUserRole, permissions, availableTabs]);
 
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiResponse, setAiResponse] = useState('');
