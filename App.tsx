@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { AppDatabase, Employee, Job, WorkLog, AttendanceRecord, Vehicle, VehicleLog, GlobalSettings, Role, ViewMode, JobStatus } from './types';
+import { AppDatabase, Employee, Job, WorkLog, AttendanceRecord, Vehicle, VehicleLog, GlobalSettings, Role, ViewMode, JobStatus, DayJustification, AIQuickPrompt, RolePermissions } from './types';
 import { dbService } from './services/db';
 import AttendanceKiosk from './components/AttendanceKiosk';
 import VehicleKiosk from './components/VehicleKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
 import AdminDashboard from './components/AdminDashboard';
-import { Users, Truck, Wrench, ShieldCheck } from 'lucide-react';
+import { Users, Truck, Wrench, ShieldCheck, Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -16,28 +16,66 @@ const App: React.FC = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [logs, setLogs] = useState<WorkLog[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [vehicleLogs, setVehicleLogs] = useState<VehicleLog[]>([]);
+  const [justifications, setJustifications] = useState<DayJustification[]>([]);
+  const [aiPrompts, setAiPrompts] = useState<AIQuickPrompt[]>([]);
+  const [permissions, setPermissions] = useState<RolePermissions>({});
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
   
   // Auth State for Panels
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
 
-  useEffect(() => {
-    const loadData = async () => {
+  const refreshData = async () => {
       try {
          const data = await dbService.getAllData();
          setEmployees(data.employees);
          setJobs(data.jobs);
          setLogs(data.logs);
          setVehicles(data.vehicles);
+         setAttendance(data.attendance);
+         setVehicleLogs(data.vehicleLogs);
+         setJustifications(data.justifications);
+         setAiPrompts(data.customPrompts);
+         setPermissions(data.permissions);
          setSettings(data.settings);
       } catch (e) {
          console.error("Failed to load data", e);
       } finally {
          setIsLoading(false);
       }
-    };
-    loadData();
+  };
+
+  useEffect(() => {
+    refreshData();
+    // Auto refresh every 30s to keep sync
+    const interval = setInterval(refreshData, 30000);
+    return () => clearInterval(interval);
   }, []);
+
+  // --- AUTOMATIC BACKUP SERVICE ---
+  useEffect(() => {
+      const backupInterval = setInterval(() => {
+          const now = new Date();
+          const day = now.getDay(); // 0=Sun, 6=Sat
+          const hours = now.getHours();
+          const minutes = now.getMinutes();
+
+          // Mon(1) to Fri(5), at 21:00
+          if (day >= 1 && day <= 5 && hours === 21 && minutes === 0) {
+              const lastBackup = localStorage.getItem('last_auto_backup');
+              const todayStr = now.toDateString();
+              
+              if (lastBackup !== todayStr && settings) {
+                  console.log("Triggering Auto-Backup...");
+                  handleAutoBackup();
+                  localStorage.setItem('last_auto_backup', todayStr);
+              }
+          }
+      }, 60000); // Check every minute
+
+      return () => clearInterval(backupInterval);
+  }, [settings]);
 
   const handleAutoBackup = async () => {
       if (!settings) return;
@@ -61,25 +99,16 @@ const App: React.FC = () => {
                   body: formData
               });
               console.log("Backup inviato al Cloud con successo.");
-          } else {
-              // Fallback to Local Download
-              const blob = new Blob([data], { type: "application/json" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `backup_alea_AUTO_${new Date().toISOString().split('T')[0]}.json`;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              console.log("Backup Automatico Locale Eseguito (Nessun Webhook)");
           }
       } catch (e) {
           console.error("Auto Backup Failed", e);
       }
   };
 
+  // --- HANDLERS WRAPPERS ---
   const handleAttendanceRecord = async (record: AttendanceRecord) => {
       await dbService.saveAttendance(record);
+      setAttendance(prev => [...prev, record]);
   };
 
   const handleVehicleAction = async (vehicle: Vehicle, employee: Employee, type: 'CHECK_OUT' | 'CHECK_IN') => {
@@ -101,8 +130,8 @@ const App: React.FC = () => {
       };
       await dbService.saveVehicleLog(log);
 
-      // Update local state
       setVehicles(prev => prev.map(v => v.id === vehicle.id ? updatedVehicle : v));
+      setVehicleLogs(prev => type === 'CHECK_OUT' ? [...prev, log] : prev.map(l => l.vehicleId === vehicle.id && !l.timestampIn ? {...l, timestampIn: new Date().toISOString()} : l));
   };
   
   const handleWorkshopLog = async (log: WorkLog) => {
@@ -124,7 +153,7 @@ const App: React.FC = () => {
       setSettings(newSettings);
   };
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center text-slate-500">Caricamento Sistema...</div>;
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center text-slate-500"><Loader2 className="animate-spin mr-2"/> Caricamento Sistema...</div>;
 
   // Simple Login for Admin/Workshop
   if ((view === 'DASHBOARD' || view === 'WORKSHOP_PANEL') && !currentUser) {
@@ -133,7 +162,7 @@ const App: React.FC = () => {
                <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full">
                    <h2 className="text-xl font-bold mb-4">Seleziona Utente</h2>
                    <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-                       {employees.filter(e => view === 'DASHBOARD' ? (e.role === Role.SYSTEM_ADMIN || e.role === Role.DIRECTION) : true).map(e => (
+                       {employees.filter(e => view === 'DASHBOARD' ? (e.role === Role.SYSTEM_ADMIN || e.role === Role.DIRECTION || e.role === Role.ADMIN || e.role === Role.ACCOUNTING || e.role === Role.SALES || e.role === Role.TECHNICAL) : true).map(e => (
                            <button key={e.id} onClick={() => setCurrentUser(e)} className="p-3 border rounded hover:bg-slate-50 text-left">
                                <div className="font-bold">{e.name}</div>
                                <div className="text-xs text-slate-500">{e.role}</div>
@@ -178,8 +207,31 @@ const App: React.FC = () => {
       />;
   }
 
-  if (view === 'DASHBOARD' && settings) {
-      return <AdminDashboard settings={settings} onUpdateSettings={handleUpdateSettings} />;
+  if (view === 'DASHBOARD' && settings && currentUser) {
+      return <AdminDashboard 
+          jobs={jobs}
+          logs={logs}
+          employees={employees}
+          attendance={attendance}
+          vehicles={vehicles}
+          vehicleLogs={vehicleLogs}
+          justifications={justifications}
+          customPrompts={aiPrompts}
+          permissions={permissions}
+          settings={settings}
+          currentUserRole={currentUser.role}
+          onUpdateSettings={handleUpdateSettings}
+          onSaveJob={async (j) => { await dbService.saveJob(j); refreshData(); }}
+          onSaveEmployee={async (e) => { await dbService.saveEmployee(e); refreshData(); }}
+          onSaveJustification={async (j) => { await dbService.saveJustification(j); refreshData(); }}
+          onSaveAiPrompts={async (p) => { await dbService.saveAiPrompts(p); setAiPrompts(p); }}
+          onSavePermissions={async (p) => { await dbService.savePermissions(p); setPermissions(p); }}
+          onUpdateLog={async (l) => { await dbService.saveWorkLog(l); refreshData(); }}
+          onSaveAttendance={handleAttendanceRecord}
+          onDeleteAttendance={async (id) => { await dbService.deleteAttendance(id); setAttendance(prev => prev.filter(a => a.id !== id)); }}
+          onSaveVehicle={async (v) => { await dbService.saveVehicle(v); refreshData(); }}
+          onDeleteVehicle={async (id) => { await dbService.deleteVehicle(id); refreshData(); }}
+      />;
   }
 
   // Default: Startup Select
@@ -212,7 +264,7 @@ const App: React.FC = () => {
         </div>
         
         <div className="absolute bottom-4 text-slate-400 text-sm font-mono">
-            v2.0.0 - ALEA System
+            v2.1.0 - ALEA System
         </div>
     </div>
   );
