@@ -122,6 +122,7 @@ export interface GlobalSettings {
   overtimeSnapMinutes?: number;
   permessoSnapMinutes?: number;
   backupWebhookUrl?: string;
+  geminiApiKey?: string;
 }
 
 export type ViewMode = 'STARTUP_SELECT' | 'LOGIN' | 'ATTENDANCE_KIOSK' | 'VEHICLE_KIOSK' | 'MOBILE_VEHICLE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';
