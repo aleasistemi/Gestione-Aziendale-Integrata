@@ -171,7 +171,12 @@ class DatabaseService {
       await batch.commit();
   }
 
-  async exportDatabase() { return JSON.stringify(await this.getAllData()); }
+  async exportDatabase() { 
+      const data = await this.getAllData();
+      // Pretty print con indentazione a 2 spazi per leggibilità umana
+      return JSON.stringify(data, null, 2); 
+  }
+  
   async importDatabase(json: string) {
       try {
           const d = JSON.parse(json);
