@@ -22,7 +22,6 @@ function App() {
   const [settings, setSettings] = useState<GlobalSettings>({ nfcEnabled: false, workPhases: [] });
   const [loading, setLoading] = useState(true);
 
-  // Auth & Navigation
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authTokenInput, setAuthTokenInput] = useState('');
   const [authError, setAuthError] = useState(false);
@@ -30,7 +29,6 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('STARTUP_SELECT');
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   
-  // Login NFC State
   const [scanValue, setScanValue] = useState('');
   const loginInputRef = useRef<HTMLInputElement>(null);
   const [nfcStatus, setNfcStatus] = useState<'IDLE' | 'LISTENING' | 'ERROR' | 'UNSUPPORTED'>('IDLE');
@@ -38,10 +36,8 @@ function App() {
   const [showLoginPinPad, setShowLoginPinPad] = useState(false);
   const [loginPin, setLoginPin] = useState('');
 
-  // Clock State for Login Screen
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Kiosk Mode Protection
   const [showKioskMenu, setShowKioskMenu] = useState(false);
   const [kioskPin, setKioskPin] = useState('');
   const [targetKioskMode, setTargetKioskMode] = useState<'ATTENDANCE' | 'VEHICLE' | 'MOBILE_VEHICLE' | null>(null);
@@ -216,7 +212,6 @@ function App() {
           const newLog: VehicleLog = { id: Date.now().toString(), vehicleId: vehicle.id, employeeId: employee.id, timestampOut: timestamp };
           await dbService.saveVehicleLog(newLog);
       } else {
-          // RESET COMPLETO PER RICONSEGNA
           const updatedVehicle: Vehicle = {
               id: vehicle.id,
               name: vehicle.name,
@@ -253,7 +248,7 @@ function App() {
               <div className="max-w-xl w-full bg-white rounded-3xl shadow-xl overflow-hidden p-10 flex flex-col items-center">
                   <div className="text-center mb-12">
                       <div className="text-5xl font-black text-[#EC1D25] tracking-tighter mb-2">ALEA SISTEMI</div>
-                      <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-xs">Sistemi di Gestione Avanzata</p>
+                      <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-xs">Sistemi di Gestione Aziendale</p>
                   </div>
                   
                   <div className="flex justify-center gap-6 mb-16">
@@ -309,7 +304,7 @@ function App() {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4 relative overflow-hidden">
         <div className="absolute top-10 text-center z-10">
-            <div className="mb-2 flex justify-center"><div className="flex flex-col items-center"><div className="text-3xl font-black text-[#EC1D25] tracking-tighter">ALEA</div><div className="text-xs font-bold text-slate-500 tracking-[0.3em] uppercase">Sistemi</div></div></div>
+            <div className="mb-2 flex justify-center"><div className="flex flex-col items-center"><div className="text-3xl font-black text-[#EC1D25] tracking-tighter">ALEA SISTEMI</div></div></div>
             <div className="text-4xl font-mono font-light text-slate-800 flex items-center justify-center gap-2"><Clock size={32} className="text-[#EC1D25]" />{currentTime.toLocaleTimeString('it-IT')}</div>
         </div>
         <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md relative z-10 mt-20">
@@ -341,7 +336,6 @@ function App() {
                             {[1,2,3,4,5,6,7,8,9].map(n => <button key={n} onClick={() => setLoginPin(p => p.length < 6 ? p + n : p)} className="p-3 bg-slate-50 rounded font-bold">{n}</button>)}
                             <button onClick={() => setLoginPin('')} className="p-3 bg-red-50 text-red-500 rounded"><Delete size={20} className="mx-auto"/></button>
                             <button onClick={() => setLoginPin(p => p.length < 6 ? p + '0' : p)} className="p-3 bg-slate-50 rounded font-bold">0</button>
-                            {/* Fix handlePinLoginSubmit prop error: replaced with onClick handler */}
                             <button onClick={handlePinLoginSubmit} className="p-3 bg-blue-600 text-white rounded"><CheckCircle size={20} className="mx-auto"/></button>
                         </div>
                     </div>
