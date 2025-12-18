@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="it">
   <head>
@@ -22,24 +23,13 @@
         font-family: 'Inter', sans-serif;
         background-color: #f1f5f9;
         -webkit-tap-highlight-color: transparent;
-      }
-      /* Prevent pull-to-refresh on mobile which looks bad in kiosk mode */
-      body {
         overscroll-behavior-y: none;
       }
       @media print {
           @page { margin: 1cm; size: landscape; }
           body { background-color: white; -webkit-print-color-adjust: exact; }
           nav, button, .no-print, input, select { display: none !important; }
-          /* Hide all tabs content by default when printing, unless specific class */
-          body > div > div > main > div > div > div { display: none; }
-          
-          /* Only show the report section */
           .print-section { display: block !important; width: 100% !important; margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; }
-          .print-section * { display: block; visibility: visible; }
-          .print-section .grid { display: grid !important; }
-          .print-section .hidden.print\:block { display: block !important; }
-          .print-section .print\:hidden { display: none !important; }
       }
     </style>
   <script type="importmap">
@@ -54,7 +44,10 @@
     "xlsx": "https://aistudiocdn.com/xlsx@^0.18.5/xlsx.mjs",
     "firebase/app": "https://esm.sh/firebase@11.0.2/app",
     "firebase/firestore": "https://esm.sh/firebase@11.0.2/firestore",
-    "firebase/": "https://esm.sh/firebase@^12.6.0/"
+    "capacitor-nfc": "https://esm.sh/capacitor-nfc@0.1.5",
+    "firebase/": "https://esm.sh/firebase@^12.7.0/",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
@@ -62,6 +55,7 @@
 </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
   <script type="module" src="/index.tsx"></script>
 </body>
 </html>
