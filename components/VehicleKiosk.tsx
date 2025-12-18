@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, Vehicle, VehicleLog, Role } from '../types';
 import { Clock, Truck, User, ArrowLeft, KeyRound, Wifi, Delete, CheckCircle, X, LogOut, ArrowRightCircle, AlertCircle, Play, Laptop } from 'lucide-react';
@@ -30,7 +29,6 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
   const [showExitPinPad, setShowExitPinPad] = useState(false);
   const [exitPin, setExitPin] = useState('');
 
-  // Filter visible employees (only workshop/technical usually take cars, but let's allow all for now)
   const visibleEmployees = employees.filter(e => 
     e.role !== Role.SYSTEM_ADMIN
   );
@@ -52,22 +50,18 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
               ndef.onreading = (event: any) => {
                   let readCode = "";
                   
-                  // 1. Try reading Text Record (Mobile Written)
                   const message = event.message;
                   for (const record of message.records) {
                     if (record.recordType === "text") {
                         const textDecoder = new TextDecoder(record.encoding);
                         readCode = textDecoder.decode(record.data);
-                        console.log("Read from NDEF Text:", readCode);
                         break;
                     }
                   }
 
-                  // 2. Fallback to Serial Number (PC Mode / Raw Tag)
                   if (!readCode) {
                       const serialNumber = event.serialNumber;
                       readCode = serialNumber.replaceAll(':', '').toUpperCase();
-                      console.log("Read from Serial:", readCode);
                   }
 
                   processScan(readCode);
@@ -86,7 +80,6 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
       }
   };
 
-  // --- WEB NFC LOGIC (MOBILE) ---
   useEffect(() => {
       if (nfcEnabled && !currentUser) {
           startNfcScan();
@@ -94,7 +87,6 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
       return () => {};
   }, [nfcEnabled, currentUser]);
 
-  // --- USB LOGIC ---
   useEffect(() => {
       if (nfcEnabled && !showPinPad && !showExitPinPad && !currentUser) {
           const focusInterval = setInterval(() => {
@@ -113,7 +105,7 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
       const emp = employees.find(e => 
           (e.nfcCode && e.nfcCode.trim().toUpperCase() === cleanCode) ||
           (e.nfcCode2 && e.nfcCode2.trim().toUpperCase() === cleanCode) ||
-          (e.id && e.id.trim().toUpperCase() === cleanCode) // Fallback to ID match
+          (e.id && e.id.trim().toUpperCase() === cleanCode)
       );
                 
       if (emp) {
@@ -177,7 +169,7 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
   }
 
   const handleExitVerify = () => {
-      if (exitPin === '1409') { // Standard Kiosk PIN
+      if (exitPin === '1409') { 
           onExit();
       } else {
           alert("PIN Errato");
@@ -198,7 +190,6 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
         <ArrowLeft size={24} />
       </button>
 
-      {/* Header */}
       <div className="mb-8 text-center">
         <div className="flex flex-col items-center mb-4">
             <h1 className="text-3xl font-black text-white tracking-widest uppercase">TOTEM MEZZI</h1>
@@ -210,7 +201,6 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
         </div>
       </div>
 
-      {/* Main Area */}
       {!currentUser ? (
         <div className="w-full max-w-4xl flex flex-col items-center">
           {message && (
@@ -229,6 +219,7 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
                       onKeyDown={handleInputKeyDown}
                       className="absolute inset-0 opacity-0 cursor-default z-0"
                       autoFocus
+                      inputMode="none" 
                   />
                   
                   <div className="relative w-64 h-64 mb-8 flex items-center justify-center cursor-pointer z-10" onClick={() => inputRef.current?.focus()}>
@@ -251,7 +242,6 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
                       </div>
                   )}
 
-                  {/* Explicit Start Button if failed */}
                   {nfcStatus !== 'LISTENING' && hasNfcSupport && (
                       <button onClick={startNfcScan} className="mb-6 flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-full font-bold shadow-lg hover:bg-blue-700 transition">
                           <Play size={16}/> ATTIVA LETTORE NFC
@@ -368,7 +358,6 @@ const VehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, onExit, 
         </div>
       )}
 
-      {/* PIN PAD MODALS (Reusable) */}
       {(showPinPad || showExitPinPad) && (
           <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60]">
               <div className="bg-slate-800 p-6 rounded-2xl w-full max-w-sm shadow-2xl border border-slate-700">

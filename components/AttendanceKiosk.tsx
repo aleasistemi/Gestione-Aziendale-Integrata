@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, AttendanceRecord, Role } from '../types';
 import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Wifi, AlertCircle, Play, Laptop, CloudOff, CloudCog } from 'lucide-react';
@@ -68,7 +67,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
               console.log('Screen Wake Lock active');
               wakeLock.addEventListener('release', () => {
                   console.log('Screen Wake Lock released');
-                  // Re-acquire on visibility change if needed, but usually release happens on tab switch
               });
           } catch (err: any) {
               console.error(`${err.name}, ${err.message}`);
@@ -76,7 +74,7 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
       }
   }
 
-  // Re-request wake lock when visibility changes (e.g. tablet screen turns back on)
+  // Re-request wake lock when visibility changes
   useEffect(() => {
       const handleVisibilityChange = () => {
           if (document.visibilityState === 'visible') {
@@ -110,22 +108,18 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
               ndef.onreading = (event: any) => {
                   let readCode = "";
 
-                  // 1. Try reading Text Record (Mobile Written)
                   const message = event.message;
                   for (const record of message.records) {
                     if (record.recordType === "text") {
                         const textDecoder = new TextDecoder(record.encoding);
                         readCode = textDecoder.decode(record.data);
-                        console.log("Read from NDEF Text:", readCode);
                         break;
                     }
                   }
 
-                  // 2. Fallback to Serial Number (PC Mode / Raw Tag)
                   if (!readCode) {
                       const serialNumber = event.serialNumber;
                       readCode = serialNumber.replaceAll(':', '').toUpperCase();
-                      console.log("Read from Serial:", readCode);
                   }
                   
                   processScan(readCode);
@@ -144,7 +138,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
       }
   };
 
-  // --- WEB NFC LOGIC (MOBILE) ---
   useEffect(() => {
       if(nfcEnabled && !selectedEmp) {
           startNfcScan();
@@ -152,8 +145,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
   }, [nfcEnabled, selectedEmp]);
 
 
-  // --- USB READER LOGIC (FALLBACK) ---
-  // Force focus on the scanner input continuously if not in a modal
   useEffect(() => {
       if (nfcEnabled && !showPinPad && !showExitPinPad && !selectedEmp) {
           const focusInterval = setInterval(() => {
@@ -169,12 +160,10 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
       if (code.length < 2) return;
       
       const cleanCode = code.trim().toUpperCase();
-      console.log("Checking code:", cleanCode); 
-      
       const emp = employees.find(e => 
           (e.nfcCode && e.nfcCode.trim().toUpperCase() === cleanCode) ||
           (e.nfcCode2 && e.nfcCode2.trim().toUpperCase() === cleanCode) ||
-          (e.id && e.id.trim().toUpperCase() === cleanCode) // Fallback to ID match
+          (e.id && e.id.trim().toUpperCase() === cleanCode)
       );
                 
       if (emp) {
@@ -185,7 +174,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
           setMessage(`Badge non riconosciuto: ${cleanCode}`);
           setScanValue('');
           setTimeout(() => setMessage(null), 3000);
-          if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
       }
   };
 
@@ -209,13 +197,11 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
     onRecord(newRecord);
     setMessage(`Timbratura ${type} registrata per ${selectedEmp.name}`);
     
-    // Reset after 3 seconds
     setTimeout(() => {
       setMessage(null);
       setSelectedEmp(null);
       setShowPinPad(false);
       setEnteredPin('');
-      // Refocus scanner
       setTimeout(() => inputRef.current?.focus(), 100);
     }, 3000);
   };
@@ -255,7 +241,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
         <ArrowLeft size={24} />
       </button>
 
-      {/* Online/Offline Status Indicator */}
       <div className="absolute top-4 right-4 z-50">
           {!isOnline ? (
               <div className="flex items-center gap-2 bg-red-100 text-red-600 px-4 py-2 rounded-full font-bold shadow-md animate-pulse cursor-pointer" onClick={handleSync}>
@@ -269,10 +254,8 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
           )}
       </div>
 
-      {/* Header Logo Area */}
       <div className="mb-10 text-center">
         <div className="mb-6 flex justify-center">
-            {/* Logo Placeholder - Alea Style */}
             <div className="flex flex-col items-center">
                 <div className="text-4xl font-black text-[#EC1D25] tracking-tighter" style={{fontFamily: 'Arial, sans-serif'}}>ALEA</div>
                 <div className="text-sm font-bold text-slate-500 tracking-[0.3em] uppercase">Sistemi</div>
@@ -286,7 +269,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
         <p className="text-slate-500 mt-2 font-medium">{currentTime.toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
       </div>
 
-      {/* Main Content Area */}
       {!selectedEmp ? (
         <div className="w-full max-w-5xl flex flex-col items-center">
           
@@ -299,7 +281,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
           {nfcEnabled ? (
               <div className="flex flex-col items-center animate-fade-in w-full max-w-md relative">
                   
-                  {/* INVISIBLE SCANNER INPUT (Legacy/USB) */}
                   <input 
                       ref={inputRef}
                       type="text" 
@@ -309,16 +290,14 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
                       className="absolute inset-0 opacity-0 cursor-default z-0"
                       autoComplete="off"
                       autoFocus
+                      inputMode="none" 
                   />
                   
-                  {/* VISUAL SCANNING ANIMATION */}
                   <div className="relative w-64 h-64 mb-8 flex items-center justify-center cursor-pointer z-10" onClick={() => inputRef.current?.focus()}>
-                       {/* Ripples */}
                        <div className="absolute inset-0 bg-[#EC1D25] rounded-full animate-ping opacity-10"></div>
                        <div className="absolute inset-4 bg-[#EC1D25] rounded-full animate-pulse opacity-5 delay-75"></div>
                        <div className="absolute inset-8 bg-[#EC1D25] rounded-full animate-pulse opacity-5 delay-150"></div>
                        
-                       {/* Central Icon */}
                        <div className="relative bg-white p-8 rounded-full shadow-2xl border-4 border-slate-50 text-[#EC1D25]">
                            <Wifi size={64} className="animate-pulse" />
                        </div>
@@ -337,7 +316,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
                       </div>
                   )}
                   
-                  {/* Explicit Start Button if failed */}
                   {nfcStatus !== 'LISTENING' && hasNfcSupport && (
                       <button onClick={startNfcScan} className="mb-6 flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-full font-bold shadow-lg hover:bg-blue-700 transition">
                           <Play size={16}/> ATTIVA LETTORE NFC
@@ -423,7 +401,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
         </div>
       )}
 
-      {/* USER PIN PAD MODAL */}
       {showPinPad && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]">
               <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl">
@@ -452,7 +429,6 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
           </div>
       )}
 
-      {/* EXIT PIN PAD MODAL */}
       {showExitPinPad && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[70]">
               <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl">
