@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Job, WorkLog, Employee, JobStatus } from '../types';
-import { Clock, Save, FileText, Plus, Calendar, Trash2, Edit2, Star, CheckCircle2 } from 'lucide-react';
+import { Clock, Save, FileText, Plus, Calendar, Trash2, Edit2, Star } from 'lucide-react';
 
 interface Props {
   currentUser: Employee;
@@ -10,7 +10,7 @@ interface Props {
   onAddLog: (log: WorkLog) => void;
   onDeleteLog: (logId: string) => void;
   onUpdateLog: (log: WorkLog) => void;
-  workPhases: string[]; // Dynamic phases from global settings
+  workPhases: string[]; 
   onUpdateJobStatus: (jobId: string, status: JobStatus) => void;
 }
 
@@ -20,22 +20,32 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
   const [phase, setPhase] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  
-  // State for Editing
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
 
   const activeJobs = jobs.filter(j => j.status === JobStatus.IN_PROGRESS || j.status === JobStatus.PLANNED);
-  
-  // Filter jobs assigned specifically to this user (Suggested)
   const mySuggestedJobs = activeJobs.filter(j => j.suggestedOperatorId === currentUser.id);
 
-  // Recent logs for this user - SORTED BY ID DESCENDING (Insertion order)
+  // LOGICA DI ORDINAMENTO OTTIMIZZATA
+  // Ordiniamo per ID decrescente per garantire l'ordine di inserimento (visto che l'ID è Date.now())
   const myLogs = logs
     .filter(l => l.employeeId === currentUser.id)
-    .sort((a, b) => b.id.localeCompare(a.id))
-    .slice(0, 10);
+    .sort((a, b) => {
+        // Se gli ID sono numerici (timestamp), ordiniamo numericamente decrescente
+        const isANum = /^\d+$/.test(a.id);
+        const isBNum = /^\d+$/.test(b.id);
+        
+        if (isANum && isBNum) {
+            return b.id.localeCompare(a.id); 
+        }
+        // I log nuovi (numerici) hanno la precedenza su quelli importati (non numerici)
+        if (isANum && !isBNum) return -1;
+        if (!isANum && isBNum) return 1;
+        
+        // Fallback sulla data per i log importati
+        return b.date.localeCompare(a.date) || b.id.localeCompare(a.id);
+    })
+    .slice(0, 20); // Aumentato a 20 elementi
 
-  // Helper to get last phase
   const getLastPhase = (jobId: string) => {
     const jobLogs = logs.filter(l => l.jobId === jobId).sort((a, b) => b.id.localeCompare(a.id));
     return jobLogs.length > 0 ? jobLogs[0].phase : '-';
@@ -46,8 +56,7 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
     if (!selectedJobId || !hours || !phase || !date) return;
 
     if (editingLogId) {
-        // Update existing
-        const updatedLog: WorkLog = {
+        onUpdateLog({
             id: editingLogId,
             employeeId: currentUser.id,
             jobId: selectedJobId,
@@ -55,14 +64,11 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
             hours: parseFloat(hours),
             date,
             notes
-        };
-        onUpdateLog(updatedLog);
+        });
         setEditingLogId(null);
-        alert('Registrazione aggiornata!');
     } else {
-        // Create new
         const newLog: WorkLog = {
-            id: Date.now().toString(),
+            id: Date.now().toString(), // Timestamp preciso per l'ordinamento inserimento
             employeeId: currentUser.id,
             jobId: selectedJobId,
             phase,
@@ -72,19 +78,13 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
         };
         onAddLog(newLog);
         
-        // Automation: If phase is Spedizione, ask to complete job
         if (phase.toLowerCase() === 'spedizione') {
             if (window.confirm("Hai selezionato SPEDIZIONE. Vuoi segnare questa commessa come COMPLETATA?")) {
                 onUpdateJobStatus(selectedJobId, JobStatus.COMPLETED);
-            } else {
-                alert('Ore caricate con successo!');
             }
-        } else {
-            alert('Ore caricate con successo!');
         }
     }
 
-    // Reset form but keep date
     setHours('');
     setPhase('');
     setNotes('');
@@ -98,7 +98,6 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
       setPhase(log.phase);
       setNotes(log.notes || '');
       setDate(log.date);
-      // Scroll to top
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -124,7 +123,6 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
         </div>
       </header>
 
-      {/* Suggested Jobs Box */}
       {mySuggestedJobs.length > 0 && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-8 shadow-sm">
               <h3 className="text-yellow-800 font-bold flex items-center gap-2 mb-3">
@@ -147,8 +145,6 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Column: Input Form */}
         <div className="lg:col-span-2 space-y-6">
           <div className={`bg-white rounded-xl shadow-sm border p-6 transition-all ${editingLogId ? 'border-yellow-400 ring-2 ring-yellow-100' : 'border-slate-200'}`}>
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2 text-slate-700">
@@ -298,7 +294,6 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
           </div>
         </div>
 
-        {/* Right Column: Recent Activity */}
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 h-full">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-slate-700">
@@ -312,7 +307,7 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
                 {myLogs.map((log, idx) => {
                   const job = jobs.find(j => j.id === log.jobId);
                   return (
-                    <div key={idx} className="mb-6 ml-6 relative group">
+                    <div key={log.id} className="mb-6 ml-6 relative group">
                       <span className="flex absolute -left-8 justify-center items-center w-4 h-4 bg-white rounded-full ring-4 ring-slate-100 border border-slate-300">
                       </span>
                       <div className="flex justify-between items-start">
@@ -345,7 +340,6 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
             )}
           </div>
         </div>
-
       </div>
     </div>
   );
