@@ -7,7 +7,7 @@ import WorkshopPanel from './components/WorkshopPanel';
 import VehicleKiosk from './components/VehicleKiosk';
 import MobileVehicleKiosk from './components/MobileVehicleKiosk';
 import { AdminDashboard } from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Truck, Smartphone, Laptop, User } from 'lucide-react';
+import { LayoutDashboard, LogOut, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Truck, Smartphone, Laptop } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -222,7 +222,6 @@ function App() {
               name: vehicle.name,
               plate: vehicle.plate,
               status: 'AVAILABLE'
-              // currentDriverId e lastCheckOut esclusi esplicitamente
           };
           await dbService.saveVehicle(updatedVehicle);
           const openLog = vehicleLogs.find(l => l.vehicleId === vehicle.id && !l.timestampIn);
@@ -371,12 +370,12 @@ function App() {
             {!isWorkshopPanel ? (
                 <button onClick={() => setViewMode('WORKSHOP_PANEL')} className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition">
                     <Wrench size={18} className="text-[#EC1D25]"/>
-                    <span className="hidden md:inline">Pannello Operativo</span>
+                    <span>Pannello Operativo</span>
                 </button>
             ) : (
                 <button onClick={() => setViewMode('DASHBOARD')} className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition">
                     <LayoutDashboard size={18} className="text-blue-600"/>
-                    <span className="hidden md:inline">Dashboard Amministrativa</span>
+                    <span>Dashboard Amministrativa</span>
                 </button>
             )}
             
