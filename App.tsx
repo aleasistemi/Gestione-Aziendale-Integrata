@@ -108,25 +108,26 @@ function App() {
     };
   }, []);
 
-  // --- AUTOMATIC BACKUP SERVICE (IMPROVED) ---
+  // --- AUTOMATIC BACKUP SERVICE (IMPROVED - RESILIENT) ---
   useEffect(() => {
       const backupInterval = setInterval(() => {
           const now = new Date();
           const day = now.getDay();
           const hours = now.getHours();
 
-          // Trigger: Lun-Ven, dopo le 21:00
+          // Trigger: Lun-Ven, se sono passate le 21:00
           if (day >= 1 && day <= 5 && hours >= 21) {
               const lastBackup = localStorage.getItem('last_auto_backup');
               const todayStr = now.toDateString();
               
+              // Se oggi non abbiamo ancora fatto il backup, fallo ora
               if (lastBackup !== todayStr) {
                   console.log("Triggering Resilient Auto-Backup...");
                   handleAutoBackup();
                   localStorage.setItem('last_auto_backup', todayStr);
               }
           }
-      }, 30000); // Controllo ogni 30 secondi per maggiore precisione
+      }, 30000); // Controlla ogni 30 secondi
 
       return () => clearInterval(backupInterval);
   }, [settings]);
@@ -136,12 +137,9 @@ function App() {
           const data = await dbService.exportDatabase();
           
           if (settings.backupWebhookUrl) {
-              console.log("Sending backup to Webhook...");
-              
               const blob = new Blob([data], { type: 'application/json' });
               const filename = `backup_alea_${new Date().toISOString().split('T')[0]}.json`;
               const formData = new FormData();
-              
               formData.append('file', blob, filename);
               
               await fetch(settings.backupWebhookUrl, {
@@ -158,7 +156,6 @@ function App() {
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
-              console.log("Backup Automatico Locale Eseguito (Nessun Webhook)");
           }
       } catch (e) {
           console.error("Auto Backup Failed", e);
