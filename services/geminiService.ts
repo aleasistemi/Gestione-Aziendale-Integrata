@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { Employee, Job, WorkLog } from "../types";
 
@@ -8,20 +7,17 @@ Il tuo compito è analizzare i dati forniti (commesse, ore lavorate, dipendenti)
 Rispondi sempre in formato Markdown. Sii conciso, professionale e orientato ai dati.
 `;
 
-/**
- * Analyzes business data using Gemini AI.
- * Follows @google/genai guidelines for world-class engineering:
- * - Uses process.env.API_KEY exclusively.
- * - Uses gemini-3-pro-preview for complex reasoning and analysis tasks.
- * - Uses correct initialization and property access.
- */
 export const analyzeBusinessData = async (
   prompt: string,
-  contextData: { jobs: Job[], logs: WorkLog[], employees: Employee[] }
+  contextData: { jobs: Job[], logs: WorkLog[], employees: Employee[] },
+  apiKey: string
 ): Promise<string> => {
+  if (!apiKey) {
+    return "API Key mancante nelle impostazioni. Contattare il sistemista.";
+  }
+
   try {
-    // Initializing with process.env.API_KEY as per the rules.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     
     const dataContext = JSON.stringify({
       summary: "Dati aziendali attuali",
@@ -37,7 +33,7 @@ export const analyzeBusinessData = async (
     });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview', // Complex Text Task: Advanced business reasoning
+      model: 'gemini-3-flash-preview',
       contents: `
         Contesto Dati (JSON):
         ${dataContext}
@@ -52,7 +48,6 @@ export const analyzeBusinessData = async (
       }
     });
 
-    // Accessing response.text as a property, not a method.
     return response.text || "Impossibile generare una risposta al momento.";
 
   } catch (error) {
