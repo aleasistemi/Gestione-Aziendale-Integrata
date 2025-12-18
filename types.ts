@@ -124,6 +124,7 @@ export interface RolePermissions {
 export interface GlobalSettings {
   nfcEnabled: boolean;
   workPhases: string[]; // Dynamic list of work phases
+  geminiApiKey?: string; // Custom API Key
   overtimeSnapMinutes?: number; // Default 30
   permessoSnapMinutes?: number; // Default 15
   backupWebhookUrl?: string; // URL Pabbly/Zapier for backups
