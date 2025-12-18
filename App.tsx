@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, ViewMode, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, JobStatus, Vehicle, VehicleLog } from './types';
 import { dbService } from './services/db';
@@ -93,7 +92,8 @@ function App() {
                   const code = tag.id || (tag.message?.records[0]?.data);
                   if (code) processLoginScan(code.toString());
               });
-              await nativeNfc.startScan();
+              // Fixed: startScan does not exist on type 'NFCPluginWeb', using scan() and casting to any.
+              await (nativeNfc as any).scan();
               return;
           } catch (e) { console.warn(e); }
       }
