@@ -1,5 +1,7 @@
 {
-  "name": "Gestione Aziendale Integrata",
+  "name": "Gestione Aziendale Integrata (backup con app)-ultima",
   "description": "Ecosistema completo per gestione presenze, ore commessa e business intelligence.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "nfc"
+  ]
 }

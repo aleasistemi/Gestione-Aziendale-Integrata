@@ -7,9 +7,8 @@
   },
   "plugins": {
     "Keyboard": {
-      "resize": "body",
-      "style": "dark",
-      "resizeOnFullScreen": true
+      "resize": "none",
+      "style": "dark"
     }
   }
 }

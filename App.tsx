@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, ViewMode, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, JobStatus, Vehicle, VehicleLog } from './types';
 import { dbService } from './services/db';
@@ -109,25 +108,25 @@ function App() {
     };
   }, []);
 
-  // --- AUTOMATIC BACKUP SERVICE ---
+  // --- AUTOMATIC BACKUP SERVICE (IMPROVED) ---
   useEffect(() => {
       const backupInterval = setInterval(() => {
           const now = new Date();
           const day = now.getDay();
           const hours = now.getHours();
-          const minutes = now.getMinutes();
 
-          if (day >= 1 && day <= 5 && hours === 21 && minutes === 0) {
+          // Trigger: Lun-Ven, dopo le 21:00
+          if (day >= 1 && day <= 5 && hours >= 21) {
               const lastBackup = localStorage.getItem('last_auto_backup');
               const todayStr = now.toDateString();
               
               if (lastBackup !== todayStr) {
-                  console.log("Triggering Auto-Backup...");
+                  console.log("Triggering Resilient Auto-Backup...");
                   handleAutoBackup();
                   localStorage.setItem('last_auto_backup', todayStr);
               }
           }
-      }, 60000);
+      }, 30000); // Controllo ogni 30 secondi per maggiore precisione
 
       return () => clearInterval(backupInterval);
   }, [settings]);
@@ -143,9 +142,7 @@ function App() {
               const filename = `backup_alea_${new Date().toISOString().split('T')[0]}.json`;
               const formData = new FormData();
               
-              // --- FIX PABBLY: SOLO FILE ---
               formData.append('file', blob, filename);
-              // Niente json_content
               
               await fetch(settings.backupWebhookUrl, {
                   method: 'POST',
@@ -580,6 +577,7 @@ function App() {
                           className="absolute inset-0 opacity-0 cursor-default"
                           autoFocus
                           autoComplete="off"
+                          inputMode="none" 
                       />
                       <div className="w-48 h-48 relative flex items-center justify-center mb-4 cursor-pointer" onClick={() => loginInputRef.current?.focus()}>
                           <div className="absolute inset-0 bg-blue-50 rounded-full animate-ping opacity-20"></div>
