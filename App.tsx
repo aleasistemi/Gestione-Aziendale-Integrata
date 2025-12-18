@@ -7,7 +7,7 @@ import WorkshopPanel from './components/WorkshopPanel';
 import VehicleKiosk from './components/VehicleKiosk';
 import MobileVehicleKiosk from './components/MobileVehicleKiosk';
 import { AdminDashboard } from './components/AdminDashboard';
-import { LayoutDashboard, LogOut, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Truck, Play, AlertCircle, Laptop, Smartphone } from 'lucide-react';
+import { LayoutDashboard, LogOut, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Truck, Smartphone, Laptop, User } from 'lucide-react';
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -37,7 +37,6 @@ function App() {
 
   const [showLoginPinPad, setShowLoginPinPad] = useState(false);
   const [loginPin, setLoginPin] = useState('');
-  const [loginMessage, setLoginMessage] = useState<string | null>(null);
 
   // Clock State for Login Screen
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -47,7 +46,6 @@ function App() {
   const [kioskPin, setKioskPin] = useState('');
   const [targetKioskMode, setTargetKioskMode] = useState<'ATTENDANCE' | 'VEHICLE' | 'MOBILE_VEHICLE' | null>(null);
 
-  // Load Data
   const refreshData = async () => {
     try {
       const data = await dbService.getAllData();
@@ -90,7 +88,6 @@ function App() {
                     setViewMode('DASHBOARD');
                 }
             } catch(e) { 
-                console.error("Failed to restore user session", e);
                 setViewMode('STARTUP_SELECT');
             }
         } else {
@@ -99,37 +96,15 @@ function App() {
     }
 
     refreshData();
-    const handleStorageChange = () => refreshData();
-    window.addEventListener('storage', handleStorageChange);
     const interval = setInterval(refreshData, 5000);
     const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(interval);
-      clearInterval(clockInterval);
-    };
+    return () => { clearInterval(interval); clearInterval(clockInterval); };
   }, []);
 
-  const handleAutoBackup = async () => {
-      try {
-          const data = await dbService.exportDatabase();
-          if (settings.backupWebhookUrl) {
-              const blob = new Blob([data], { type: 'application/json' });
-              const filename = `backup_alea_${new Date().toISOString().split('T')[0]}.json`;
-              const formData = new FormData();
-              formData.append('file', blob, filename);
-              await fetch(settings.backupWebhookUrl, { method: 'POST', body: formData });
-          }
-      } catch (e) { console.error("Auto Backup Failed", e); }
-  };
-
-  const hasNfcSupport = 'NDEFReader' in window;
-
   const startNfcScan = async () => {
-      if (settings.nfcEnabled && hasNfcSupport && viewMode === 'LOGIN') {
+      if (settings.nfcEnabled && 'NDEFReader' in window && viewMode === 'LOGIN') {
           try {
-              const ndef = new window.NDEFReader();
+              const ndef = new (window as any).NDEFReader();
               await ndef.scan();
               setNfcStatus('LISTENING');
               ndef.onreading = (event: any) => {
@@ -142,15 +117,10 @@ function App() {
                         break;
                     }
                   }
-                  if (!readCode) {
-                      const serialNumber = event.serialNumber;
-                      readCode = serialNumber.replaceAll(':', '').toUpperCase();
-                  }
+                  if (!readCode) readCode = event.serialNumber.replaceAll(':', '').toUpperCase();
                   processLoginScan(readCode);
               };
           } catch (error) { setNfcStatus('ERROR'); }
-      } else if (!hasNfcSupport) {
-          setNfcStatus('UNSUPPORTED'); 
       }
   };
 
@@ -158,9 +128,7 @@ function App() {
     if (isAuthenticated && viewMode === 'LOGIN' && settings.nfcEnabled && !showLoginPinPad && !showKioskMenu) {
          startNfcScan(); 
          const focusInterval = setInterval(() => {
-              if (document.activeElement !== loginInputRef.current) {
-                  loginInputRef.current?.focus();
-              }
+              if (document.activeElement !== loginInputRef.current) loginInputRef.current?.focus();
           }, 500);
           return () => clearInterval(focusInterval);
     }
@@ -200,7 +168,7 @@ function App() {
 
   const handlePinLoginSubmit = () => {
     const emp = employees.find(e => e.pin === loginPin);
-    if (emp) { handleLogin(emp); } else { setLoginPin(''); }
+    if (emp) handleLogin(emp); else setLoginPin('');
   }
 
   const handleKioskEntry = () => {
@@ -215,9 +183,7 @@ function App() {
               setViewMode('MOBILE_VEHICLE_KIOSK');
               localStorage.setItem('kiosk_mode', 'MOBILE_VEHICLE');
           }
-          setShowKioskMenu(false);
-          setKioskPin('');
-          setTargetKioskMode(null);
+          setShowKioskMenu(false); setKioskPin(''); setTargetKioskMode(null);
       } else { alert('PIN Errato'); setKioskPin(''); }
   }
 
@@ -250,17 +216,22 @@ function App() {
           const newLog: VehicleLog = { id: Date.now().toString(), vehicleId: vehicle.id, employeeId: employee.id, timestampOut: timestamp };
           await dbService.saveVehicleLog(newLog);
       } else {
-          // Per riconsegnare, rimuoviamo esplicitamente le chiavi per garantire che Firestore le cancelli
-          const { currentDriverId, lastCheckOut, ...vehicleWithoutDriver } = vehicle;
-          const updatedVehicle: Vehicle = { ...vehicleWithoutDriver, status: 'AVAILABLE' };
+          // RESET COMPLETO PER RICONSEGNA
+          const updatedVehicle: Vehicle = {
+              id: vehicle.id,
+              name: vehicle.name,
+              plate: vehicle.plate,
+              status: 'AVAILABLE'
+              // currentDriverId e lastCheckOut esclusi esplicitamente
+          };
           await dbService.saveVehicle(updatedVehicle);
           const openLog = vehicleLogs.find(l => l.vehicleId === vehicle.id && !l.timestampIn);
-          if (openLog) { await dbService.saveVehicleLog({ ...openLog, timestampIn: timestamp }); }
+          if (openLog) await dbService.saveVehicleLog({ ...openLog, timestampIn: timestamp });
       }
       refreshData();
   }
 
-  if (loading) { return <div className="min-h-screen flex items-center justify-center bg-slate-100"><Loader2 className="animate-spin text-blue-600" size={48} /></div>; }
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-100"><Loader2 className="animate-spin text-blue-600" size={48} /></div>;
 
   if (!isAuthenticated) {
     return (
@@ -269,7 +240,7 @@ function App() {
            <div className="flex justify-center mb-6"><div className="bg-red-100 p-4 rounded-full"><Lock className="text-[#EC1D25]" size={40} /></div></div>
            <h1 className="text-2xl font-bold text-center text-slate-800 mb-2">Accesso Riservato</h1>
            <form onSubmit={verifyAuthToken} className="space-y-4">
-             <input type="password" className={`w-full text-center text-xl tracking-widest p-4 border rounded-xl outline-none focus:ring-2 ${authError ? 'border-red-500 ring-red-200' : 'border-slate-300 focus:ring-[#EC1D25]'}`} placeholder="TOKEN" value={authTokenInput} onChange={(e) => {setAuthTokenInput(e.target.value); setAuthError(false);}} />
+             <input type="password" autoFocus className={`w-full text-center text-xl tracking-widest p-4 border rounded-xl outline-none focus:ring-2 ${authError ? 'border-red-500 ring-red-200' : 'border-slate-300 focus:ring-[#EC1D25]'}`} placeholder="TOKEN" value={authTokenInput} onChange={(e) => {setAuthTokenInput(e.target.value); setAuthError(false);}} />
              <button type="submit" className="w-full bg-[#EC1D25] text-white font-bold py-4 rounded-xl hover:bg-red-700 transition flex items-center justify-center gap-2">Autorizza Dispositivo <ArrowRight size={20} /></button>
            </form>
         </div>
@@ -280,34 +251,41 @@ function App() {
   if (viewMode === 'STARTUP_SELECT') {
       return (
           <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
-              <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl overflow-hidden p-8">
-                  <div className="text-center mb-10">
-                      <h1 className="text-4xl font-black text-[#EC1D25] tracking-tighter mb-2">ALEA Sistemi</h1>
-                      <p className="text-slate-500">Seleziona la modalità di avvio del dispositivo</p>
+              <div className="max-w-xl w-full bg-white rounded-3xl shadow-xl overflow-hidden p-10 flex flex-col items-center">
+                  <div className="text-center mb-12">
+                      <div className="text-5xl font-black text-[#EC1D25] tracking-tighter mb-2">ALEA</div>
+                      <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-xs">Sistemi Integrati</p>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <button onClick={() => { setTargetKioskMode('ATTENDANCE'); setShowKioskMenu(true); }} className="p-6 bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 rounded-2xl flex flex-col items-center gap-2 transition group">
-                          <div className="bg-blue-600 text-white p-4 rounded-full shadow-lg group-hover:scale-110 transition-transform"><Clock size={32} /></div>
-                          <h2 className="text-xl font-bold text-slate-800">Totem Presenze</h2>
+                  
+                  <div className="flex justify-center gap-6 mb-16">
+                      <button onClick={() => { setTargetKioskMode('ATTENDANCE'); setShowKioskMenu(true); }} className="flex flex-col items-center gap-2 group">
+                          <div className="w-16 h-16 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><Clock size={28} /></div>
+                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Presenze</span>
                       </button>
-                      <button onClick={() => { setTargetKioskMode('VEHICLE'); setShowKioskMenu(true); }} className="p-6 bg-orange-50 hover:bg-orange-100 border-2 border-orange-200 rounded-2xl flex flex-col items-center gap-2 transition group">
-                          <div className="bg-orange-500 text-white p-4 rounded-full shadow-lg group-hover:scale-110 transition-transform"><Truck size={32} /></div>
-                          <h2 className="text-xl font-bold text-slate-800">Totem Mezzi (Tablet)</h2>
+                      <button onClick={() => { setTargetKioskMode('VEHICLE'); setShowKioskMenu(true); }} className="flex flex-col items-center gap-2 group">
+                          <div className="w-16 h-16 bg-orange-500 text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><Truck size={28} /></div>
+                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Mezzi</span>
                       </button>
-                      <button onClick={() => { setTargetKioskMode('MOBILE_VEHICLE'); setShowKioskMenu(true); }} className="md:col-span-2 p-6 bg-slate-900 hover:bg-slate-950 border-2 border-slate-800 rounded-2xl flex flex-col items-center gap-2 transition group">
-                          <div className="bg-[#EC1D25] text-white p-4 rounded-full shadow-lg group-hover:scale-110 transition-transform"><Smartphone size={32} /></div>
-                          <h2 className="text-xl font-bold text-white uppercase tracking-widest">App Mezzi Smartphone</h2>
+                      <button onClick={() => { setTargetKioskMode('MOBILE_VEHICLE'); setShowKioskMenu(true); }} className="flex flex-col items-center gap-2 group">
+                          <div className="w-16 h-16 bg-[#EC1D25] text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><Smartphone size={28} /></div>
+                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Smart</span>
                       </button>
                   </div>
-                  <div className="mt-8 border-t pt-8">
-                      <button onClick={() => setViewMode('LOGIN')} className="w-full p-4 bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition flex items-center justify-center gap-2 font-bold"><Laptop size={20}/> Accedi al Gestionale (PC/Ufficio)</button>
-                  </div>
+
+                  <button 
+                    onClick={() => setViewMode('LOGIN')} 
+                    className="w-full max-w-sm p-5 bg-slate-900 text-white rounded-2xl hover:bg-black transition-all flex items-center justify-center gap-3 font-black uppercase tracking-widest shadow-xl"
+                  >
+                      <Laptop size={24} className="text-[#EC1D25]"/>
+                      Accedi al Gestionale
+                  </button>
               </div>
+              
               {showKioskMenu && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl flex flex-col">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold text-slate-800">Conferma Modalità</h3>
+                            <h3 className="text-xl font-bold text-slate-800 tracking-tight">Accesso Protetto</h3>
                             <button onClick={() => {setShowKioskMenu(false); setKioskPin(''); setTargetKioskMode(null);}}><X size={24} className="text-slate-400"/></button>
                         </div>
                         <div className="text-center text-3xl font-mono tracking-widest py-3 bg-slate-100 rounded-lg mb-6">{kioskPin.padEnd(4, '•').split('').map(c => c === '•' ? '•' : '*').join('')}</div>
@@ -319,14 +297,14 @@ function App() {
                         </div>
                     </div>
                 </div>
-           )}
+              )}
           </div>
       )
   }
 
-  if (viewMode === 'ATTENDANCE_KIOSK') { return <AttendanceKiosk employees={employees} onRecord={addAttendanceRecord} onExit={handleExitKiosk} nfcEnabled={settings.nfcEnabled} />; }
-  if (viewMode === 'VEHICLE_KIOSK') { return <VehicleKiosk employees={employees} vehicles={vehicles} onAction={handleVehicleAction} onExit={handleExitKiosk} nfcEnabled={settings.nfcEnabled} />; }
-  if (viewMode === 'MOBILE_VEHICLE_KIOSK') { return <MobileVehicleKiosk employees={employees} vehicles={vehicles} onAction={handleVehicleAction} onExit={handleExitKiosk} />; }
+  if (viewMode === 'ATTENDANCE_KIOSK') return <AttendanceKiosk employees={employees} onRecord={addAttendanceRecord} onExit={handleExitKiosk} nfcEnabled={settings.nfcEnabled} />;
+  if (viewMode === 'VEHICLE_KIOSK') return <VehicleKiosk employees={employees} vehicles={vehicles} onAction={handleVehicleAction} onExit={handleExitKiosk} nfcEnabled={settings.nfcEnabled} />;
+  if (viewMode === 'MOBILE_VEHICLE_KIOSK') return <MobileVehicleKiosk employees={employees} vehicles={vehicles} onAction={handleVehicleAction} onExit={handleExitKiosk} />;
 
   if (viewMode === 'LOGIN') {
     return (
@@ -342,7 +320,6 @@ function App() {
                    <div className="flex flex-col items-center py-4 w-full relative">
                       <input ref={loginInputRef} type="text" value={scanValue} onChange={(e) => setScanValue(e.target.value)} onKeyDown={handleLoginKeyDown} className="absolute inset-0 opacity-0 cursor-default" autoFocus autoComplete="off" inputMode="none" />
                       <div className="w-48 h-48 relative flex items-center justify-center mb-4 cursor-pointer" onClick={() => loginInputRef.current?.focus()}><div className="relative z-10 bg-white p-6 rounded-full shadow-lg border-2 border-blue-100"><Scan size={48} className="text-blue-600" /></div></div>
-                      {hasNfcSupport && <button onClick={startNfcScan} className="mb-4 bg-blue-600 text-white px-4 py-1.5 rounded-full font-bold shadow transition text-sm">ATTIVA LETTORE</button>}
                       <button onClick={() => setShowLoginPinPad(true)} className="relative z-10 text-blue-600 hover:underline mt-4 text-sm font-medium"><KeyRound size={16} /> PIN Utente</button>
                    </div>
               ) : (
@@ -381,15 +358,52 @@ function App() {
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-30 print:hidden">
         <div className="max-w-7xl mx-auto px-4 flex justify-between h-16">
-          <div className="flex items-center gap-2"><LayoutDashboard className="text-blue-600" /><span className="font-bold text-xl text-slate-800">{isWorkshopPanel ? 'Operativo' : 'Dashboard'}</span></div>
-          <div className="flex items-center gap-4">
-            {!isWorkshopPanel ? <button onClick={() => setViewMode('WORKSHOP_PANEL')} className="text-sm font-medium text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200"><Wrench size={16} /></button> : <button onClick={() => setViewMode('DASHBOARD')} className="text-sm font-medium text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200"><LayoutDashboard size={16} /></button>}
-            <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-600 bg-slate-50 rounded-full"><LogOut size={20} /></button>
+          <div className="flex items-center gap-2">
+              <LayoutDashboard className="text-blue-600" />
+              <span className="font-black text-xl text-slate-800 tracking-tighter">ALEA</span>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="hidden sm:flex flex-col items-end">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Utente</span>
+                <span className="text-sm font-black text-slate-800">Ciao, {currentUser?.name}</span>
+            </div>
+            
+            {!isWorkshopPanel ? (
+                <button onClick={() => setViewMode('WORKSHOP_PANEL')} className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition">
+                    <Wrench size={18} className="text-[#EC1D25]"/>
+                    <span className="hidden md:inline">Pannello Operativo</span>
+                </button>
+            ) : (
+                <button onClick={() => setViewMode('DASHBOARD')} className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition">
+                    <LayoutDashboard size={18} className="text-blue-600"/>
+                    <span className="hidden md:inline">Dashboard Amministrativa</span>
+                </button>
+            )}
+            
+            <button onClick={handleLogout} className="p-2.5 text-slate-400 hover:text-red-600 bg-slate-50 rounded-full transition-colors border border-slate-100"><LogOut size={20} /></button>
           </div>
         </div>
       </nav>
       <main className="flex-1 overflow-y-auto">
-        {!isWorkshopPanel ? <AdminDashboard jobs={jobs} logs={logs} employees={employees} attendance={attendance} vehicles={vehicles} vehicleLogs={vehicleLogs} justifications={justifications} customPrompts={aiPrompts} permissions={permissions} onSaveJob={handleSaveJob} onSaveEmployee={handleSaveEmployee} onSaveJustification={handleSaveJustification} onSaveAiPrompts={handleSaveAiPrompts} onSavePermissions={handleSavePermissions} onUpdateLog={updateWorkLog} currentUserRole={currentUser?.role || Role.EMPLOYEE} settings={settings} onSaveSettings={handleSaveSettings} onSaveAttendance={addAttendanceRecord} onDeleteAttendance={deleteAttendanceRecord} onSaveVehicle={handleSaveVehicle} onDeleteVehicle={handleDeleteVehicle} /> : <WorkshopPanel currentUser={currentUser!} jobs={jobs} logs={logs} onAddLog={addWorkLog} onDeleteLog={deleteWorkLog} onUpdateLog={updateWorkLog} workPhases={settings.workPhases} onUpdateJobStatus={handleUpdateJobStatus} />}
+        {!isWorkshopPanel ? (
+          <AdminDashboard 
+            jobs={jobs} logs={logs} employees={employees} attendance={attendance} 
+            vehicles={vehicles} vehicleLogs={vehicleLogs} justifications={justifications} 
+            customPrompts={aiPrompts} permissions={permissions} onSaveJob={handleSaveJob} 
+            onSaveEmployee={handleSaveEmployee} onSaveJustification={handleSaveJustification} 
+            onSaveAiPrompts={handleSaveAiPrompts} onSavePermissions={handleSavePermissions} 
+            onUpdateLog={updateWorkLog} currentUserRole={currentUser?.role || Role.EMPLOYEE} 
+            settings={settings} onSaveSettings={handleSaveSettings} 
+            onSaveAttendance={addAttendanceRecord} onDeleteAttendance={deleteAttendanceRecord} 
+            onSaveVehicle={handleSaveVehicle} onDeleteVehicle={handleDeleteVehicle} 
+          />
+        ) : (
+          <WorkshopPanel 
+            currentUser={currentUser!} jobs={jobs} logs={logs} 
+            onAddLog={addWorkLog} onDeleteLog={deleteWorkLog} onUpdateLog={updateWorkLog} 
+            workPhases={settings.workPhases} onUpdateJobStatus={handleUpdateJobStatus} 
+          />
+        )}
       </main>
     </div>
   );
