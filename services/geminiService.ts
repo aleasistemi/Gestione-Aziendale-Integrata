@@ -8,19 +8,21 @@ Il tuo compito è analizzare i dati forniti (commesse, ore lavorate, dipendenti)
 Rispondi sempre in formato Markdown. Sii conciso, professionale e orientato ai dati.
 `;
 
+/**
+ * Analyzes business data using Gemini AI.
+ * Follows @google/genai guidelines for world-class engineering:
+ * - Uses process.env.API_KEY exclusively.
+ * - Uses gemini-3-pro-preview for complex reasoning and analysis tasks.
+ * - Uses correct initialization and property access.
+ */
 export const analyzeBusinessData = async (
   prompt: string,
-  contextData: { jobs: Job[], logs: WorkLog[], employees: Employee[] },
-  apiKey: string
+  contextData: { jobs: Job[], logs: WorkLog[], employees: Employee[] }
 ): Promise<string> => {
-  if (!apiKey) {
-    return "API Key mancante nelle impostazioni. Contattare il sistemista.";
-  }
-
   try {
-    const ai = new GoogleGenAI({ apiKey: apiKey });
+    // Initializing with process.env.API_KEY as per the rules.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     
-    // Create a context summary to reduce token usage while keeping relevance
     const dataContext = JSON.stringify({
       summary: "Dati aziendali attuali",
       jobsCount: contextData.jobs.length,
@@ -31,32 +33,30 @@ export const analyzeBusinessData = async (
         priority: j.priority
       })),
       employees: contextData.employees.map(e => ({ name: e.name, role: e.role, cost: e.hourlyRate })),
-      recentLogsSample: contextData.logs.slice(0, 20) // Limit logs sent
+      recentLogsSample: contextData.logs.slice(0, 20)
     });
 
-    const fullPrompt = `
-      Contesto Dati (JSON):
-      ${dataContext}
-
-      Domanda Utente: "${prompt}"
-
-      Se la domanda richiede calcoli specifici non presenti nel JSON sommario, fai delle stime basate sui dati disponibili o suggerisci quali dati mancano.
-      Analizza eventuali inefficienze, commesse in perdita o dipendenti con performance anomale se richiesto.
-    `;
-
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: fullPrompt,
+      model: 'gemini-3-pro-preview', // Complex Text Task: Advanced business reasoning
+      contents: `
+        Contesto Dati (JSON):
+        ${dataContext}
+
+        Domanda Utente: "${prompt}"
+
+        Analizza i dati e fornisci una risposta professionale.
+      `,
       config: {
         systemInstruction: getSystemInstruction(),
-        temperature: 0.2, // Low temperature for analytical precision
+        temperature: 0.2,
       }
     });
 
+    // Accessing response.text as a property, not a method.
     return response.text || "Impossibile generare una risposta al momento.";
 
   } catch (error) {
     console.error("Gemini Error:", error);
-    return "Si è verificato un errore durante l'analisi AI. Controlla la validità dell'API Key.";
+    return "Si è verificato un errore durante l'analisi AI.";
   }
 };
