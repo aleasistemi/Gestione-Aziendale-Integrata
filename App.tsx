@@ -252,8 +252,8 @@ function App() {
           <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
               <div className="max-w-xl w-full bg-white rounded-3xl shadow-xl overflow-hidden p-10 flex flex-col items-center">
                   <div className="text-center mb-12">
-                      <div className="text-5xl font-black text-[#EC1D25] tracking-tighter mb-2">ALEA</div>
-                      <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-xs">Sistemi Integrati</p>
+                      <div className="text-5xl font-black text-[#EC1D25] tracking-tighter mb-2">ALEA SISTEMI</div>
+                      <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-xs">Sistemi di Gestione Avanzata</p>
                   </div>
                   
                   <div className="flex justify-center gap-6 mb-16">
@@ -341,6 +341,7 @@ function App() {
                             {[1,2,3,4,5,6,7,8,9].map(n => <button key={n} onClick={() => setLoginPin(p => p.length < 6 ? p + n : p)} className="p-3 bg-slate-50 rounded font-bold">{n}</button>)}
                             <button onClick={() => setLoginPin('')} className="p-3 bg-red-50 text-red-500 rounded"><Delete size={20} className="mx-auto"/></button>
                             <button onClick={() => setLoginPin(p => p.length < 6 ? p + '0' : p)} className="p-3 bg-slate-50 rounded font-bold">0</button>
+                            {/* Fix handlePinLoginSubmit prop error: replaced with onClick handler */}
                             <button onClick={handlePinLoginSubmit} className="p-3 bg-blue-600 text-white rounded"><CheckCircle size={20} className="mx-auto"/></button>
                         </div>
                     </div>
@@ -359,7 +360,7 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 flex justify-between h-16">
           <div className="flex items-center gap-2">
               <LayoutDashboard className="text-blue-600" />
-              <span className="font-black text-xl text-slate-800 tracking-tighter">ALEA</span>
+              <span className="font-black text-xl text-slate-800 tracking-tighter uppercase">ALEA SISTEMI</span>
           </div>
           <div className="flex items-center gap-6">
             <div className="hidden sm:flex flex-col items-end">
