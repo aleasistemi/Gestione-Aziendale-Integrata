@@ -1,32 +1,30 @@
 
 export enum Role {
-  SYSTEM_ADMIN = 'Sistemista', // God Mode tecnico
-  DIRECTION = 'Direzione', // God Mode gestionale
-  ADMIN = 'Amministrazione', // Solo HR/Paghe
-  ACCOUNTING = 'Contabilità', // Simile ad Amministrazione
-  SALES = 'Commerciale', // Gestione Commesse
-  TECHNICAL = 'Tecnico', // Gestione Commesse come Sales
-  WORKSHOP = 'Officina', // Operativi (include Magazzino)
-  WAREHOUSE = 'Magazzino', // Nuovo ruolo specifico
-  EMPLOYEE = 'Dipendente' // Generico
+  SYSTEM_ADMIN = 'Sistemista',
+  DIRECTION = 'Direzione',
+  ADMIN = 'Amministrazione',
+  ACCOUNTING = 'Contabilità',
+  SALES = 'Commerciale',
+  TECHNICAL = 'Tecnico',
+  WORKSHOP = 'Officina',
+  WAREHOUSE = 'Magazzino',
+  EMPLOYEE = 'Dipendente'
 }
 
 export interface Employee {
   id: string;
   name: string;
   role: Role;
-  hourlyRate: number; // Costo orario aziendale
+  hourlyRate: number;
   department: string;
-  // Gestione Orari e Ritardi
-  toleranceMinutes: number; // Es. 10 minuti
-  scheduleStartMorning: string; // "08:30"
-  scheduleEndMorning: string; // "12:30"
-  scheduleStartAfternoon: string; // "13:30"
-  scheduleEndAfternoon: string; // "17:30"
-  workDays: number[]; // 0=Sun, 1=Mon, etc. Default [1,2,3,4,5]
-  // Auth
+  toleranceMinutes: number;
+  scheduleStartMorning: string;
+  scheduleEndMorning: string;
+  scheduleStartAfternoon: string;
+  scheduleEndAfternoon: string;
+  workDays: number[];
   nfcCode?: string;
-  nfcCode2?: string; // Secondo badge opzionale
+  nfcCode2?: string;
   pin?: string;
 }
 
@@ -44,13 +42,12 @@ export interface Job {
   description: string;
   status: JobStatus;
   budgetHours: number;
-  budgetValue: number; // Valore commessa
+  budgetValue: number;
   deadline: string;
-  creationDate?: string; // Data inizio/creazione commessa
-  priority: number; // 1-5, default 3
-  suggestedOperatorId?: string; // Visual note for assignment
-  notes?: string; // Note interne aggiuntive
-  // Archiving
+  creationDate?: string;
+  priority: number;
+  suggestedOperatorId?: string;
+  notes?: string;
   isArchived?: boolean;
   archiveYear?: number;
 }
@@ -58,43 +55,41 @@ export interface Job {
 export interface AttendanceRecord {
   id: string;
   employeeId: string;
-  timestamp: string; // ISO String
+  timestamp: string;
   type: 'ENTRATA' | 'USCITA';
-  isOfflineSync?: boolean; // Flag per capire se è stato sincronizzato dopo
+  isOfflineSync?: boolean;
 }
 
 export interface WorkLog {
   id: string;
   employeeId: string;
   jobId: string;
-  phase: string; // Es. "Montaggio", "Saldatura", "Progettazione"
+  phase: string;
   hours: number;
   date: string;
   notes?: string;
 }
 
-// --- NEW VEHICLE TYPES ---
 export interface Vehicle {
   id: string;
-  name: string; // Es. "Fiat Ducato"
-  plate: string; // Targa
+  name: string;
+  plate: string;
   status: 'AVAILABLE' | 'IN_USE' | 'MAINTENANCE';
-  currentDriverId?: string; // Se in uso, chi lo ha?
-  lastCheckOut?: string; // ISO String di quando è stato preso
+  currentDriverId?: string;
+  lastCheckOut?: string;
 }
 
 export interface VehicleLog {
   id: string;
   vehicleId: string;
   employeeId: string;
-  timestampOut: string; // Quando è stato preso
-  timestampIn?: string; // Quando è stato restituito (null se in corso)
+  timestampOut: string;
+  timestampIn?: string;
   notes?: string;
 }
-// -------------------------
 
 export enum JustificationType {
-  STANDARD = 'Standard', // Calcolo automatico
+  STANDARD = 'Standard',
   FERIE = 'Ferie',
   MALATTIA = 'Malattia',
   PERMESSO = 'Permesso',
@@ -105,9 +100,9 @@ export enum JustificationType {
 export interface DayJustification {
   id: string;
   employeeId: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   type: JustificationType;
-  hoursOffset?: number; // Ore da aggiungere/togliere o ore totali forzate
+  hoursOffset?: number;
   notes?: string;
 }
 
@@ -118,21 +113,19 @@ export interface AIQuickPrompt {
 }
 
 export interface RolePermissions {
-  [role: string]: string[]; // Role -> Array of allowed Tab IDs
+  [role: string]: string[];
 }
 
 export interface GlobalSettings {
   nfcEnabled: boolean;
-  workPhases: string[]; // Dynamic list of work phases
-  geminiApiKey?: string; // Custom API Key
-  overtimeSnapMinutes?: number; // Default 30
-  permessoSnapMinutes?: number; // Default 15
-  backupWebhookUrl?: string; // URL Pabbly/Zapier for backups
+  workPhases: string[];
+  overtimeSnapMinutes?: number;
+  permessoSnapMinutes?: number;
+  backupWebhookUrl?: string;
 }
 
-export type ViewMode = 'STARTUP_SELECT' | 'LOGIN' | 'ATTENDANCE_KIOSK' | 'VEHICLE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';
+export type ViewMode = 'STARTUP_SELECT' | 'LOGIN' | 'ATTENDANCE_KIOSK' | 'VEHICLE_KIOSK' | 'MOBILE_VEHICLE_KIOSK' | 'DASHBOARD' | 'WORKSHOP_PANEL';
 
-// Helper type for the Database
 export interface AppDatabase {
   employees: Employee[];
   jobs: Job[];
@@ -146,7 +139,6 @@ export interface AppDatabase {
   settings: GlobalSettings;
 }
 
-// --- WEB NFC TYPES ---
 export interface NDEFRecord {
   recordType: string;
   mediaType?: string;
@@ -168,13 +160,11 @@ export interface NDEFReadingEvent extends Event {
 
 export interface NDEFReader {
   scan: (options?: any) => Promise<void>;
-  // Added write method to support writing to NFC tags
   write: (message: any, options?: any) => Promise<void>;
   onreading: ((this: NDEFReader, event: NDEFReadingEvent) => any) | null;
   onreadingerror: ((this: NDEFReader, event: Event) => any) | null;
 }
 
-// Extend Window interface
 declare global {
   interface Window {
     NDEFReader: {
