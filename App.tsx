@@ -250,7 +250,9 @@ function App() {
           const newLog: VehicleLog = { id: Date.now().toString(), vehicleId: vehicle.id, employeeId: employee.id, timestampOut: timestamp };
           await dbService.saveVehicleLog(newLog);
       } else {
-          const updatedVehicle: Vehicle = { ...vehicle, status: 'AVAILABLE', currentDriverId: undefined, lastCheckOut: undefined };
+          // Per riconsegnare, rimuoviamo esplicitamente le chiavi per garantire che Firestore le cancelli
+          const { currentDriverId, lastCheckOut, ...vehicleWithoutDriver } = vehicle;
+          const updatedVehicle: Vehicle = { ...vehicleWithoutDriver, status: 'AVAILABLE' };
           await dbService.saveVehicle(updatedVehicle);
           const openLog = vehicleLogs.find(l => l.vehicleId === vehicle.id && !l.timestampIn);
           if (openLog) { await dbService.saveVehicleLog({ ...openLog, timestampIn: timestamp }); }
