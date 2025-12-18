@@ -29,12 +29,15 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
   // Filter jobs assigned specifically to this user (Suggested)
   const mySuggestedJobs = activeJobs.filter(j => j.suggestedOperatorId === currentUser.id);
 
-  // Recent logs for this user
-  const myLogs = logs.filter(l => l.employeeId === currentUser.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 10);
+  // Recent logs for this user - SORTED BY ID DESCENDING (Insertion order)
+  const myLogs = logs
+    .filter(l => l.employeeId === currentUser.id)
+    .sort((a, b) => b.id.localeCompare(a.id))
+    .slice(0, 10);
 
   // Helper to get last phase
   const getLastPhase = (jobId: string) => {
-    const jobLogs = logs.filter(l => l.jobId === jobId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const jobLogs = logs.filter(l => l.jobId === jobId).sort((a, b) => b.id.localeCompare(a.id));
     return jobLogs.length > 0 ? jobLogs[0].phase : '-';
   };
 
