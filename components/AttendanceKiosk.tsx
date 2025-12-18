@@ -65,7 +65,8 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
                   const code = tag.id || (tag.message?.records[0]?.data);
                   if (code) processScan(code.toString());
               });
-              await nativeNfc.startScan();
+              // Fixed: startScan does not exist on type 'NFCPluginWeb', using scan() and casting to any.
+              await (nativeNfc as any).scan();
               return;
           } catch (e) {
               console.error("Native NFC failed", e);
