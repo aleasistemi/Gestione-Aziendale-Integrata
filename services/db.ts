@@ -2,9 +2,8 @@
 import { AppDatabase, Employee, Job, WorkLog, AttendanceRecord, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, Vehicle, VehicleLog } from '../types';
 import { MOCK_EMPLOYEES, MOCK_JOBS, MOCK_LOGS, MOCK_ATTENDANCE } from '../constants';
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, writeBatch, query, where } from "firebase/firestore";
+import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, writeBatch } from "firebase/firestore";
 
-// Configurazione Firebase fornita dall'utente
 const firebaseConfig = {
   apiKey: "AIzaSyAMExnSLvZab2lQeg8bPJsZ91w4bvlDQm4",
   authDomain: "gestione-aziendale-ore.firebaseapp.com",
@@ -14,21 +13,14 @@ const firebaseConfig = {
   appId: "1:180634359822:web:f55c1086e731af71d3845f"
 };
 
-// Inizializzazione App Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 const DEFAULT_AI_PROMPTS: AIQuickPrompt[] = [
   { id: '1', label: 'Analisi Margine', prompt: 'Analizza il margine di profitto di tutte le commesse attive e dimmi quali sono in perdita.' },
   { id: '2', label: 'Efficienza Officina', prompt: 'Analizza le ore lavorate dal reparto Officina e identifica eventuali colli di bottiglia.' },
-  { id: '3', label: 'Analisi Costi', prompt: 'Quali sono i costi maggiori sostenuti questo mese in termini di ore lavorate?' },
   { id: '4', label: 'Clienti Top', prompt: 'Identifica i 3 clienti migliori per fatturato generato.' },
-  { id: '5', label: 'Sforamento Budget', prompt: 'Elenca le commesse che hanno superato il budget ore previsto.' },
-  { id: '6', label: 'Straordinari', prompt: 'Ci sono dipendenti che stanno facendo troppi straordinari o ore eccessive?' },
-  { id: '7', label: 'Previsione Chiusura', prompt: 'In base al ritmo attuale, quando prevedi che chiuderemo le commesse in corso?' },
-  { id: '8', label: 'Ritardi Dipendenti', prompt: 'Analizza i ritardi dei dipendenti e suggerisci azioni correttive.' },
-  { id: '9', label: 'Budget vs Reale', prompt: 'Confronta il budget preventivato con le ore reali lavorate per le commesse concluse di recente.' },
-  { id: '10', label: 'Ottimizzazione', prompt: 'Dammi 3 suggerimenti per ottimizzare i costi operativi basandoti sui dati attuali.' },
+  { id: '5', label: 'Sforamento Budget', prompt: 'Elenca le commesse che hanno superato il budget ore previsto.' }
 ];
 
 const DEFAULT_PERMISSIONS: RolePermissions = {
@@ -39,29 +31,16 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
   [Role.SALES]: ['OVERVIEW', 'JOBS', 'MANAGE'],
   [Role.TECHNICAL]: ['OVERVIEW', 'JOBS', 'MANAGE'],
   [Role.WORKSHOP]: [],
-  [Role.WAREHOUSE]: [], // Magazzino base (solo accesso tramite totem solitamente, o app limitata)
+  [Role.WAREHOUSE]: [],
   [Role.EMPLOYEE]: []
 };
 
 const DEFAULT_SETTINGS: GlobalSettings = {
   nfcEnabled: false,
-  geminiApiKey: '',
-  overtimeSnapMinutes: 30,
-  permessoSnapMinutes: 15,
-  workPhases: [
-    'Preventivo', 
-    'Ordine', 
-    'Taglio', 
-    'Lavorazioni', 
-    'Assemblaggio', 
-    'Taglio Pannelli', 
-    'Preparazione Accessori', 
-    'Imballaggio', 
-    'Spedizione'
-  ]
+  workPhases: ['Preventivo', 'Ordine', 'Taglio', 'Lavorazioni', 'Assemblaggio', 'Imballaggio', 'Spedizione'],
+  geminiApiKey: ''
 };
 
-// Dati iniziali per il primo avvio (Seeding)
 const SEED_DATA: AppDatabase = {
   employees: MOCK_EMPLOYEES,
   jobs: MOCK_JOBS,
@@ -75,55 +54,29 @@ const SEED_DATA: AppDatabase = {
   settings: DEFAULT_SETTINGS
 };
 
-// LocalStorage Keys
 const OFFLINE_ATTENDANCE_KEY = 'offline_attendance_queue';
 
 class DatabaseService {
-  
-  // Metodo per inizializzare il DB se vuoto (Primo Deploy)
   private async seedDatabaseIfNeeded() {
+      if (!navigator.onLine) return; 
       try {
-          // Check if DB is reachable first
-          if (!navigator.onLine) return; 
-
           const empSnap = await getDocs(collection(db, 'employees'));
           if (empSnap.empty) {
-              console.log("Database vuoto. Avvio procedura di Seed iniziale...");
               await this.bulkImport(SEED_DATA.jobs, SEED_DATA.logs, SEED_DATA.employees);
-              
-              // Seed Settings, Permissions, Prompts
               await setDoc(doc(db, 'settings', 'global'), SEED_DATA.settings);
               await setDoc(doc(db, 'permissions', 'roles'), { map: SEED_DATA.permissions });
-              
               const batch = writeBatch(db);
-              SEED_DATA.customPrompts.forEach(p => {
-                  batch.set(doc(db, 'customPrompts', p.id), p);
-              });
+              SEED_DATA.customPrompts.forEach(p => batch.set(doc(db, 'customPrompts', p.id), p));
               await batch.commit();
-              console.log("Seed completato.");
           }
-      } catch (e) {
-          console.error("Errore durante il seed:", e);
-      }
+      } catch (e) { console.error("Seed error:", e); }
   }
 
   async getAllData(): Promise<AppDatabase> {
-    // Se offline, ritorna dati "best effort" (o mock se vuoto) e un array per le nuove timbrature
-    // In una PWA reale useremmo IndexedDB per cache completa. Qui semplifichiamo.
     if (!navigator.onLine) {
-        console.warn("App offline. Caricamento limitato.");
-        // Nota: Qui idealmente caricheremmo da una cache locale. 
-        // Per ora ritorniamo SEED_DATA + offline queue per non rompere la UI.
-        const offlineQueue = this.getOfflineAttendance();
-        return {
-            ...SEED_DATA,
-            attendance: [...SEED_DATA.attendance, ...offlineQueue]
-        };
+        return { ...SEED_DATA, attendance: [...SEED_DATA.attendance, ...this.getOfflineAttendance()] };
     }
-
-    // Controllo seed al primo caricamento
     await this.seedDatabaseIfNeeded();
-
     try {
         const [empSnap, jobSnap, logSnap, attSnap, justSnap, promptSnap, permSnap, setSnap, vehSnap, vehLogSnap] = await Promise.all([
             getDocs(collection(db, 'employees')),
@@ -137,7 +90,6 @@ class DatabaseService {
             getDocs(collection(db, 'vehicles')),
             getDocs(collection(db, 'vehicleLogs'))
         ]);
-
         const employees = empSnap.docs.map(d => d.data() as Employee);
         const jobs = jobSnap.docs.map(d => d.data() as Job);
         const logs = logSnap.docs.map(d => d.data() as WorkLog);
@@ -146,257 +98,86 @@ class DatabaseService {
         const customPrompts = promptSnap.docs.map(d => d.data() as AIQuickPrompt);
         const vehicles = vehSnap.docs.map(d => d.data() as Vehicle);
         const vehicleLogs = vehLogSnap.docs.map(d => d.data() as VehicleLog);
-        
-        // Merge offline queue if present
         const offlineQueue = this.getOfflineAttendance();
-        if (offlineQueue.length > 0) {
-            attendance = [...attendance, ...offlineQueue];
-        }
-
-        // Gestione documenti singoli (Settings / Permissions)
+        if (offlineQueue.length > 0) attendance = [...attendance, ...offlineQueue];
         const permDoc = permSnap.docs.find(d => d.id === 'roles');
         const permissions = permDoc ? permDoc.data().map as RolePermissions : DEFAULT_PERMISSIONS;
-
         const setDocSnap = setSnap.docs.find(d => d.id === 'global');
         const settings = setDocSnap ? setDocSnap.data() as GlobalSettings : DEFAULT_SETTINGS;
-
-        // Ensure default workPhases exist if legacy data
-        if (!settings.workPhases || settings.workPhases.length === 0) {
-            settings.workPhases = DEFAULT_SETTINGS.workPhases;
-        }
-        
-        // Ensure overtime/permesso snap exist
-        if (settings.overtimeSnapMinutes === undefined) settings.overtimeSnapMinutes = 30;
-        if (settings.permessoSnapMinutes === undefined) settings.permessoSnapMinutes = 15;
-
-        // Fallback per prompts se vuoti (caso raro)
-        const finalPrompts = customPrompts.length > 0 ? customPrompts : DEFAULT_AI_PROMPTS;
-
-        return {
-            employees,
-            jobs,
-            logs,
-            attendance,
-            justifications,
-            customPrompts: finalPrompts,
-            permissions,
-            settings,
-            vehicles,
-            vehicleLogs
-        };
-    } catch (e) {
-        console.error("Errore recupero dati da Firebase:", e);
-        // Ritorna dati vuoti o mock in caso di errore grave di connessione per non bloccare la UI
-        return SEED_DATA; 
-    }
+        return { employees, jobs, logs, attendance, justifications, customPrompts, permissions, settings, vehicles, vehicleLogs };
+    } catch (e) { return SEED_DATA; }
   }
 
-  // --- OFFLINE SUPPORT HELPERS ---
   private getOfflineAttendance(): AttendanceRecord[] {
-      try {
-          const raw = localStorage.getItem(OFFLINE_ATTENDANCE_KEY);
-          return raw ? JSON.parse(raw) : [];
-      } catch { return []; }
-  }
-
-  private saveOfflineAttendance(record: AttendanceRecord) {
-      const current = this.getOfflineAttendance();
-      current.push({...record, isOfflineSync: true});
-      localStorage.setItem(OFFLINE_ATTENDANCE_KEY, JSON.stringify(current));
+      const raw = localStorage.getItem(OFFLINE_ATTENDANCE_KEY);
+      return raw ? JSON.parse(raw) : [];
   }
 
   async syncOfflineAttendance(): Promise<number> {
       if (!navigator.onLine) return 0;
       const queue = this.getOfflineAttendance();
       if (queue.length === 0) return 0;
-
-      console.log(`Syncing ${queue.length} offline records...`);
-      let syncedCount = 0;
       const batch = writeBatch(db);
-      
-      // Process in chunks just in case, but usually small
-      for (const record of queue) {
-          const ref = doc(db, 'attendance', record.id);
-          batch.set(ref, record);
-          syncedCount++;
-      }
-
+      queue.forEach(record => batch.set(doc(db, 'attendance', record.id), record));
       try {
           await batch.commit();
-          // Clear local storage ONLY if commit successful
           localStorage.removeItem(OFFLINE_ATTENDANCE_KEY);
-          return syncedCount;
-      } catch (e) {
-          console.error("Sync failed:", e);
-          return 0;
+          return queue.length;
+      } catch { return 0; }
+  }
+
+  async saveWorkLog(log: WorkLog) { await setDoc(doc(db, 'logs', log.id), log); }
+  async deleteWorkLog(id: string) { await deleteDoc(doc(db, 'logs', id)); }
+  async saveAttendance(record: AttendanceRecord) {
+      if (!navigator.onLine) {
+          const q = this.getOfflineAttendance();
+          q.push(record);
+          localStorage.setItem(OFFLINE_ATTENDANCE_KEY, JSON.stringify(q));
+      } else {
+          await setDoc(doc(db, 'attendance', record.id), record);
       }
   }
-
-  // --- STANDARD OPERATIONS ---
-  async saveWorkLog(log: WorkLog): Promise<void> {
-    if (!navigator.onLine) throw new Error("Offline: Impossible salvare log lavoro.");
-    const cleanLog = JSON.parse(JSON.stringify(log)); 
-    await setDoc(doc(db, 'logs', log.id), cleanLog);
-  }
-
-  async deleteWorkLog(logId: string): Promise<void> {
-    if (!navigator.onLine) throw new Error("Offline: Impossible eliminare.");
-    await deleteDoc(doc(db, 'logs', logId));
-  }
-
-  async saveAttendance(record: AttendanceRecord): Promise<void> {
-    try {
-        if (!navigator.onLine) throw new Error("Offline");
-        const cleanRecord = JSON.parse(JSON.stringify(record));
-        await setDoc(doc(db, 'attendance', record.id), cleanRecord);
-    } catch (e) {
-        // Fallback to Offline Storage
-        console.warn("Saving attendance locally (Offline mode)");
-        this.saveOfflineAttendance(record);
-    }
-  }
-
-  async deleteAttendance(recordId: string): Promise<void> {
-    if (!navigator.onLine) throw new Error("Offline: Impossible eliminare.");
-    await deleteDoc(doc(db, 'attendance', recordId));
-  }
-
-  async saveJob(job: Job): Promise<void> {
-    const cleanJob = JSON.parse(JSON.stringify(job));
-    await setDoc(doc(db, 'jobs', job.id), cleanJob);
-  }
-
-  async saveEmployee(employee: Employee): Promise<void> {
-    const cleanEmp = JSON.parse(JSON.stringify(employee));
-    await setDoc(doc(db, 'employees', employee.id), cleanEmp);
-  }
-
-  async saveJustification(justification: DayJustification): Promise<void> {
-    const cleanJust = JSON.parse(JSON.stringify(justification));
-    await setDoc(doc(db, 'justifications', justification.id), cleanJust);
-  }
-
-  async saveAiPrompts(prompts: AIQuickPrompt[]): Promise<void> {
+  async deleteAttendance(id: string) { await deleteDoc(doc(db, 'attendance', id)); }
+  async saveJob(job: Job) { await setDoc(doc(db, 'jobs', job.id), job); }
+  async saveEmployee(emp: Employee) { await setDoc(doc(db, 'employees', emp.id), emp); }
+  async saveJustification(just: DayJustification) { await setDoc(doc(db, 'justifications', just.id), just); }
+  async saveAiPrompts(p: AIQuickPrompt[]) { 
       const batch = writeBatch(db);
-      prompts.forEach(p => {
-          batch.set(doc(db, 'customPrompts', p.id), JSON.parse(JSON.stringify(p)));
-      });
+      p.forEach(x => batch.set(doc(db, 'customPrompts', x.id), x));
       await batch.commit();
   }
+  async savePermissions(p: RolePermissions) { await setDoc(doc(db, 'permissions', 'roles'), { map: p }); }
+  async saveSettings(s: GlobalSettings) { await setDoc(doc(db, 'settings', 'global'), s); }
+  async saveVehicle(v: Vehicle) { await setDoc(doc(db, 'vehicles', v.id), v); }
+  async deleteVehicle(id: string) { await deleteDoc(doc(db, 'vehicles', id)); }
+  async saveVehicleLog(l: VehicleLog) { await setDoc(doc(db, 'vehicleLogs', l.id), l); }
 
-  async savePermissions(permissions: RolePermissions): Promise<void> {
-      await setDoc(doc(db, 'permissions', 'roles'), { map: permissions });
-  }
-
-  async saveSettings(settings: GlobalSettings): Promise<void> {
-      await setDoc(doc(db, 'settings', 'global'), settings);
-  }
-
-  // --- VEHICLE OPERATIONS ---
-  async saveVehicle(vehicle: Vehicle): Promise<void> {
-      const cleanVehicle = JSON.parse(JSON.stringify(vehicle));
-      await setDoc(doc(db, 'vehicles', vehicle.id), cleanVehicle);
-  }
-
-  async deleteVehicle(vehicleId: string): Promise<void> {
-      await deleteDoc(doc(db, 'vehicles', vehicleId));
-  }
-
-  async saveVehicleLog(log: VehicleLog): Promise<void> {
-      const cleanLog = JSON.parse(JSON.stringify(log));
-      await setDoc(doc(db, 'vehicleLogs', log.id), cleanLog);
-  }
-
-  // --- BULK OPERATIONS ---
-  async bulkImport(newJobs: Job[], newLogs: WorkLog[], newEmployees: Employee[]): Promise<void> {
-      const sanitize = (obj: any) => {
-          const newObj = { ...obj };
-          Object.keys(newObj).forEach(key => {
-              if (newObj[key] === undefined) delete newObj[key];
-          });
-          return newObj;
-      };
-
-      const allOperations = [
-          ...newEmployees.map(e => ({ type: 'employee', ref: doc(db, 'employees', e.id), data: sanitize(e) })),
-          ...newJobs.map(j => ({ type: 'job', ref: doc(db, 'jobs', j.id), data: sanitize(j) })),
-          ...newLogs.map(l => ({ type: 'log', ref: doc(db, 'logs', l.id), data: sanitize(l) }))
-      ];
-
-      const BATCH_SIZE = 450; 
-      
-      console.log(`Starting Bulk Import: ${allOperations.length} operations`);
-
-      for (let i = 0; i < allOperations.length; i += BATCH_SIZE) {
+  async bulkImport(jobs: Job[], logs: WorkLog[], emps: Employee[]) {
+      const BATCH_SIZE = 400;
+      const ops = [...emps.map(e=>({r:doc(db,'employees',e.id),d:e})), ...jobs.map(j=>({r:doc(db,'jobs',j.id),d:j})), ...logs.map(l=>({r:doc(db,'logs',l.id),d:l}))];
+      for (let i=0; i<ops.length; i+=BATCH_SIZE) {
           const batch = writeBatch(db);
-          const chunk = allOperations.slice(i, i + BATCH_SIZE);
-          
-          chunk.forEach(op => {
-              batch.set(op.ref, op.data);
-          });
-
-          try {
-              console.log(`Committing batch chunk ${i / BATCH_SIZE + 1}...`);
-              await batch.commit();
-          } catch (e) {
-              console.error("Batch commit failed:", e);
-              throw e;
-          }
+          ops.slice(i, i+BATCH_SIZE).forEach(op => batch.set(op.r, op.d));
+          await batch.commit();
       }
   }
 
-  async resetJobsAndLogs(): Promise<void> {
-      try {
-          const jobsSnap = await getDocs(collection(db, 'jobs'));
-          const logsSnap = await getDocs(collection(db, 'logs'));
-          
-          const allDocs = [...jobsSnap.docs, ...logsSnap.docs];
-          const BATCH_SIZE = 450;
-
-          for (let i = 0; i < allDocs.length; i += BATCH_SIZE) {
-              const batch = writeBatch(db);
-              const chunk = allDocs.slice(i, i + BATCH_SIZE);
-              chunk.forEach(d => batch.delete(d.ref));
-              await batch.commit();
-          }
-
-      } catch (e) {
-          console.error("Errore reset dati:", e);
-          throw e;
-      }
-  }
-
-  async exportDatabase(): Promise<string> {
-    const data = await this.getAllData();
-    return JSON.stringify(data, null, 2);
-  }
-
-  async importDatabase(jsonString: string): Promise<boolean> {
-    try {
-      const data = JSON.parse(jsonString);
-      if (!data.employees || !data.jobs || !data.logs) {
-        throw new Error("Formato backup non valido");
-      }
-      
-      await this.bulkImport(data.jobs, data.logs, data.employees);
-      await this.savePermissions(data.permissions);
-      await this.saveSettings(data.settings);
-      
+  async resetJobsAndLogs() {
+      const jobs = await getDocs(collection(db, 'jobs'));
+      const logs = await getDocs(collection(db, 'logs'));
       const batch = writeBatch(db);
-      (data.attendance || []).forEach((a: AttendanceRecord) => batch.set(doc(db, 'attendance', a.id), a));
-      (data.justifications || []).forEach((j: DayJustification) => batch.set(doc(db, 'justifications', j.id), j));
-      
-      // Vehicles restore
-      (data.vehicles || []).forEach((v: Vehicle) => batch.set(doc(db, 'vehicles', v.id), v));
-      (data.vehicleLogs || []).forEach((l: VehicleLog) => batch.set(doc(db, 'vehicleLogs', l.id), l));
-
+      jobs.docs.forEach(d => batch.delete(d.ref));
+      logs.docs.forEach(d => batch.delete(d.ref));
       await batch.commit();
+  }
 
-      return true;
-    } catch (e) {
-      console.error("Failed to import database", e);
-      return false;
-    }
+  async exportDatabase() { return JSON.stringify(await this.getAllData()); }
+  async importDatabase(json: string) {
+      try {
+          const d = JSON.parse(json);
+          await this.bulkImport(d.jobs, d.logs, d.employees);
+          return true;
+      } catch { return false; }
   }
 }
 
