@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Employee, Vehicle, Role } from '../types';
-import { Clock, Truck, ArrowLeft, User, CheckCircle, ChevronRight } from 'lucide-react';
+import { Truck, ArrowLeft, CheckCircle, ChevronRight } from 'lucide-react';
 
 interface Props {
   employees: Employee[];
@@ -73,8 +73,8 @@ const MobileVehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, on
         /* LISTA NOMI - ZERO INPUT / ZERO TASTIERA */
         <div className="flex-1 flex flex-col animate-in fade-in duration-300">
           <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold mb-1">CHI SEI?</h2>
-            <p className="text-slate-500 text-sm">Seleziona il tuo nome dall'elenco</p>
+            <h2 className="text-2xl font-bold mb-1 uppercase tracking-tighter">CHI SEI?</h2>
+            <p className="text-slate-500 text-sm">Tocca il tuo nome dall'elenco</p>
           </div>
 
           <div className="grid grid-cols-1 gap-3 pb-10 overflow-y-auto">
@@ -82,10 +82,10 @@ const MobileVehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, on
               <button
                   key={emp.id}
                   onClick={() => setCurrentUser(emp)}
-                  className="flex items-center justify-between p-4 bg-slate-900 active:bg-slate-800 rounded-2xl border border-slate-800 transition-all"
+                  className="flex items-center justify-between p-4 bg-slate-900 active:bg-slate-800 rounded-2xl border border-slate-800 transition-all shadow-lg"
               >
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-lg font-black text-[#EC1D25]">
+                    <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center text-lg font-black text-[#EC1D25] border border-slate-700">
                         {emp.name.charAt(0)}
                     </div>
                     <span className="font-bold text-slate-100 text-lg">{emp.name}</span>
@@ -98,7 +98,7 @@ const MobileVehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, on
       ) : (
         /* SELEZIONE MEZZI */
         <div className="flex-1 flex flex-col animate-in slide-in-from-right duration-300">
-            <div className="flex items-center justify-between mb-6 bg-slate-900 p-4 rounded-2xl border border-slate-800">
+            <div className="flex items-center justify-between mb-6 bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-[#EC1D25] text-white flex items-center justify-center font-black">
                         {currentUser.name.charAt(0)}
@@ -132,9 +132,9 @@ const MobileVehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, on
                                 key={vehicle.id}
                                 disabled={!isAvailable && !isMine}
                                 onClick={() => handleVehicleSelection(vehicle)}
-                                className={`p-5 rounded-2xl border-2 flex flex-col gap-3 text-left transition-all active:scale-95 ${
+                                className={`p-5 rounded-2xl border-2 flex flex-col gap-3 text-left transition-all active:scale-95 shadow-md ${
                                   isMine 
-                                    ? "bg-[#EC1D25] border-[#EC1D25]" 
+                                    ? "bg-[#EC1D25] border-[#EC1D25] ring-4 ring-red-500/20" 
                                     : isAvailable 
                                       ? "bg-slate-900 border-slate-800" 
                                       : "bg-slate-950 border-slate-900 opacity-20 grayscale pointer-events-none"
