@@ -2,19 +2,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, ViewMode, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, JobStatus, Vehicle, VehicleLog } from './types';
 import { dbService } from './services/db';
+import { APP_CONFIG } from './appConfig';
 import AttendanceKiosk from './components/AttendanceKiosk';
 import WorkshopPanel from './components/WorkshopPanel';
 import VehicleKiosk from './components/VehicleKiosk';
 import MobileVehicleKiosk from './components/MobileVehicleKiosk';
 import { AdminDashboard } from './components/AdminDashboard';
 import { LayoutDashboard, LogOut, Loader2, Wrench, Scan, KeyRound, Lock, ArrowRight, X, Delete, CheckCircle, Clock, Truck, Smartphone, Laptop } from 'lucide-react';
-
-/**
- * CONFIGURAZIONE PER APK DEDICATA
- * Se vuoi che l'APK apra DIRETTAMENTE il totem mezzi per smartphone,
- * imposta questa variabile su true prima di fare la build.
- */
-const IS_SMART_TOTEM_APK = false; 
 
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -33,8 +27,7 @@ function App() {
   const [authTokenInput, setAuthTokenInput] = useState('');
   const [authError, setAuthError] = useState(false);
 
-  // Corrected the typo 'MOBILE_VE_KIOSK' to 'MOBILE_VEHICLE_KIOSK' to match the ViewMode type
-  const [viewMode, setViewMode] = useState<ViewMode>(IS_SMART_TOTEM_APK ? 'MOBILE_VEHICLE_KIOSK' : 'STARTUP_SELECT');
+  const [viewMode, setViewMode] = useState<ViewMode>('STARTUP_SELECT');
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   
   const [scanValue, setScanValue] = useState('');
@@ -43,6 +36,7 @@ function App() {
 
   const [showLoginPinPad, setShowLoginPinPad] = useState(false);
   const [loginPin, setLoginPin] = useState('');
+
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const [showKioskMenu, setShowKioskMenu] = useState(false);
@@ -70,13 +64,21 @@ function App() {
   };
 
   useEffect(() => {
+    // Gestione Token di autorizzazione (rimane per sicurezza)
     const storedToken = localStorage.getItem('auth_token');
     if (storedToken === 'ALEASISTEMI') {
       setIsAuthenticated(true);
+    } else if (APP_CONFIG.MODE === 'MOBILE_TOTEM') {
+      // Per il totem mezzi saltiamo la protezione token se necessario, 
+      // o la forziamo a true se vogliamo che l'APK sia "aperto"
+      setIsAuthenticated(true);
+      localStorage.setItem('auth_token', 'ALEASISTEMI');
     }
 
-    // Solo se non siamo in modalità APK forzata, gestiamo la persistenza delle viste
-    if (!IS_SMART_TOTEM_APK) {
+    // LOGICA DI BOOT DIRETTO
+    if (APP_CONFIG.MODE === 'MOBILE_TOTEM') {
+        setViewMode('MOBILE_VEHICLE_KIOSK');
+    } else {
         const savedKioskMode = localStorage.getItem('kiosk_mode');
         if (savedKioskMode === 'ATTENDANCE') setViewMode('ATTENDANCE_KIOSK');
         else if (savedKioskMode === 'VEHICLE') setViewMode('VEHICLE_KIOSK');
@@ -97,10 +99,6 @@ function App() {
                 setViewMode('STARTUP_SELECT');
             }
         }
-    } else {
-        // Se siamo in APK forzata, assicuriamoci di essere sulla vista corretta
-        setViewMode('MOBILE_VEHICLE_KIOSK');
-        setIsAuthenticated(true); // Saltiamo l'auth del dispositivo per il totem mobile dedicato
     }
 
     refreshData();
@@ -195,7 +193,16 @@ function App() {
       } else { alert('PIN Errato'); setKioskPin(''); }
   }
 
-  const handleExitKiosk = () => { localStorage.removeItem('kiosk_mode'); setViewMode('STARTUP_SELECT'); }
+  const handleExitKiosk = () => { 
+      if (APP_CONFIG.MODE === 'MOBILE_TOTEM') {
+          // In modalità totem mobile, l'uscita non fa nulla o ricarica l'app
+          window.location.reload();
+      } else {
+          localStorage.removeItem('kiosk_mode'); 
+          setViewMode('STARTUP_SELECT'); 
+      }
+  }
+
   const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('current_user_json'); setViewMode('LOGIN'); };
 
   const addWorkLog = async (newLog: WorkLog) => { await dbService.saveWorkLog(newLog); refreshData(); };
@@ -239,7 +246,7 @@ function App() {
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-100"><Loader2 className="animate-spin text-blue-600" size={48} /></div>;
 
-  if (!isAuthenticated && !IS_SMART_TOTEM_APK) {
+  if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
@@ -254,7 +261,7 @@ function App() {
     )
   }
 
-  if (viewMode === 'STARTUP_SELECT' && !IS_SMART_TOTEM_APK) {
+  if (viewMode === 'STARTUP_SELECT') {
       return (
           <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
               <div className="max-w-xl w-full bg-white rounded-3xl shadow-xl overflow-hidden p-10 flex flex-col items-center">
@@ -310,7 +317,7 @@ function App() {
 
   if (viewMode === 'ATTENDANCE_KIOSK') return <AttendanceKiosk employees={employees} onRecord={addAttendanceRecord} onExit={handleExitKiosk} nfcEnabled={settings.nfcEnabled} />;
   if (viewMode === 'VEHICLE_KIOSK') return <VehicleKiosk employees={employees} vehicles={vehicles} onAction={handleVehicleAction} onExit={handleExitKiosk} nfcEnabled={settings.nfcEnabled} />;
-  if (viewMode === 'MOBILE_VEHICLE_KIOSK') return <MobileVehicleKiosk employees={employees} vehicles={vehicles} onAction={handleVehicleAction} onExit={IS_SMART_TOTEM_APK ? () => {} : handleExitKiosk} />;
+  if (viewMode === 'MOBILE_VEHICLE_KIOSK') return <MobileVehicleKiosk employees={employees} vehicles={vehicles} onAction={handleVehicleAction} onExit={handleExitKiosk} />;
 
   if (viewMode === 'LOGIN') {
     return (
