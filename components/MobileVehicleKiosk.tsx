@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Employee, Vehicle, Role } from '../types';
-import { Truck, ArrowLeft, CheckCircle, ChevronRight } from 'lucide-react';
+import { Truck, ArrowLeft, CheckCircle, ChevronRight, Users, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface Props {
   employees: Employee[];
@@ -14,11 +14,16 @@ const MobileVehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, on
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [message, setMessage] = useState<string | null>(null);
+  const [showOthers, setShowOthers] = useState(false);
 
-  // Filtriamo gli operatori (escludiamo i sistemisti) e ordiniamo per nome
-  const visibleEmployees = employees
+  // Filtriamo gli operatori (escludiamo i sistemisti)
+  const allVisible = employees
     .filter(e => e.role !== Role.SYSTEM_ADMIN)
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Dividiamo tra Magazzino e Altri
+  const warehouseEmps = allVisible.filter(e => e.role === Role.WAREHOUSE || e.department === 'Magazzino');
+  const otherEmps = allVisible.filter(e => e.role !== Role.WAREHOUSE && e.department !== 'Magazzino');
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -50,8 +55,25 @@ const MobileVehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, on
       setTimeout(() => {
           setMessage(null);
           setCurrentUser(null);
+          setShowOthers(false);
       }, 2000);
   }
+
+  const renderEmpButton = (emp: Employee) => (
+    <button
+        key={emp.id}
+        onClick={() => setCurrentUser(emp)}
+        className="flex items-center justify-between p-4 bg-slate-900 active:bg-slate-800 rounded-2xl border border-slate-800 transition-all shadow-lg"
+    >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center text-lg font-black text-[#EC1D25] border border-slate-700">
+              {emp.name.charAt(0)}
+          </div>
+          <span className="font-bold text-slate-100 text-lg">{emp.name}</span>
+        </div>
+        <ChevronRight size={20} className="text-slate-700" />
+    </button>
+  );
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col p-4 no-select overflow-x-hidden">
@@ -61,7 +83,7 @@ const MobileVehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, on
           <ArrowLeft size={24} />
         </button>
         <div className="text-center">
-            <h1 className="text-lg font-black text-[#EC1D25] tracking-widest uppercase">ALEA SMART</h1>
+            <h1 className="text-lg font-black text-[#EC1D25] tracking-widest uppercase">ALEA SISTEMI</h1>
             <div className="text-xl font-mono text-slate-400">
                 {currentTime.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'})}
             </div>
@@ -70,29 +92,39 @@ const MobileVehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, on
       </div>
 
       {!currentUser ? (
-        /* LISTA NOMI - ZERO INPUT / ZERO TASTIERA */
         <div className="flex-1 flex flex-col animate-in fade-in duration-300">
           <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold mb-1 uppercase tracking-tighter">CHI SEI?</h2>
-            <p className="text-slate-500 text-sm">Tocca il tuo nome dall'elenco</p>
+            <h2 className="text-2xl font-bold mb-1 uppercase tracking-tighter italic">GESTIONE MEZZI</h2>
+            <p className="text-slate-500 text-sm">Seleziona il tuo nome</p>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 pb-10 overflow-y-auto">
-              {visibleEmployees.map(emp => (
-              <button
-                  key={emp.id}
-                  onClick={() => setCurrentUser(emp)}
-                  className="flex items-center justify-between p-4 bg-slate-900 active:bg-slate-800 rounded-2xl border border-slate-800 transition-all shadow-lg"
-              >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center text-lg font-black text-[#EC1D25] border border-slate-700">
-                        {emp.name.charAt(0)}
-                    </div>
-                    <span className="font-bold text-slate-100 text-lg">{emp.name}</span>
-                  </div>
-                  <ChevronRight size={20} className="text-slate-700" />
-              </button>
-              ))}
+          <div className="flex flex-col gap-3 pb-10 overflow-y-auto">
+              {/* UTENTI MAGAZZINO SEMPRE VISIBILI */}
+              <div className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] mb-1 px-2 flex items-center gap-2">
+                  <Truck size={12}/> Personale Magazzino
+              </div>
+              {warehouseEmps.map(renderEmpButton)}
+              {warehouseEmps.length === 0 && <p className="text-slate-700 italic text-sm px-4">Nessun utente magazzino configurato.</p>}
+
+              {/* SELETTORE ALTRI UTENTI */}
+              <div className="mt-4">
+                  <button 
+                    onClick={() => setShowOthers(!showOthers)}
+                    className="w-full py-4 px-4 bg-slate-900/50 border border-slate-800 rounded-2xl flex items-center justify-between text-slate-400 font-bold uppercase text-xs tracking-widest"
+                  >
+                      <div className="flex items-center gap-2">
+                        <Users size={16}/>
+                        Altri Utenti
+                      </div>
+                      {showOthers ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
+                  </button>
+                  
+                  {showOthers && (
+                      <div className="mt-3 flex flex-col gap-3 animate-in slide-in-from-top-2 duration-200">
+                          {otherEmps.map(renderEmpButton)}
+                      </div>
+                  )}
+              </div>
           </div>
         </div>
       ) : (
@@ -108,7 +140,7 @@ const MobileVehicleKiosk: React.FC<Props> = ({ employees, vehicles, onAction, on
                     </div>
                 </div>
                 <button 
-                  onClick={() => setCurrentUser(null)} 
+                  onClick={() => {setCurrentUser(null); setShowOthers(false);}} 
                   className="px-4 py-2 bg-slate-800 rounded-xl text-[10px] font-black uppercase tracking-widest"
                 >
                     Cambia
