@@ -26,25 +26,25 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
   const mySuggestedJobs = activeJobs.filter(j => j.suggestedOperatorId === currentUser.id);
 
   // LOGICA DI ORDINAMENTO OTTIMIZZATA
-  // Ordiniamo per ID decrescente (timestamp di inserimento) per garantire l'ordine reale di creazione
+  // Ordiniamo per ID decrescente per garantire l'ordine di inserimento (visto che l'ID è Date.now())
   const myLogs = logs
     .filter(l => l.employeeId === currentUser.id)
     .sort((a, b) => {
-        // Se l'ID è puramente numerico, usiamo quello (ordine di inserimento)
+        // Se gli ID sono numerici (timestamp), ordiniamo numericamente decrescente
         const isANum = /^\d+$/.test(a.id);
         const isBNum = /^\d+$/.test(b.id);
         
         if (isANum && isBNum) {
             return b.id.localeCompare(a.id); 
         }
-        // I log manuali (nuovi) hanno la precedenza su quelli importati (non numerici)
+        // I log nuovi (numerici) hanno la precedenza su quelli importati (non numerici)
         if (isANum && !isBNum) return -1;
         if (!isANum && isBNum) return 1;
         
         // Fallback sulla data per i log importati
         return b.date.localeCompare(a.date) || b.id.localeCompare(a.id);
     })
-    .slice(0, 20); // Aumentato a 20 elementi per evitare che spariscano troppo presto
+    .slice(0, 20); // Aumentato a 20 elementi
 
   const getLastPhase = (jobId: string) => {
     const jobLogs = logs.filter(l => l.jobId === jobId).sort((a, b) => b.id.localeCompare(a.id));
@@ -68,7 +68,7 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
         setEditingLogId(null);
     } else {
         const newLog: WorkLog = {
-            id: Date.now().toString(), // ID univoco temporale per ordinamento perfetto
+            id: Date.now().toString(), // Timestamp preciso per l'ordinamento inserimento
             employeeId: currentUser.id,
             jobId: selectedJobId,
             phase,
@@ -304,7 +304,7 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
               <p className="text-slate-400 italic text-sm">Nessuna attività recente registrata.</p>
             ) : (
               <div className="relative border-l-2 border-slate-200 ml-3 space-y-6 pb-2">
-                {myLogs.map((log) => {
+                {myLogs.map((log, idx) => {
                   const job = jobs.find(j => j.id === log.jobId);
                   return (
                     <div key={log.id} className="mb-6 ml-6 relative group">
