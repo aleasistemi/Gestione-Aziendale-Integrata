@@ -64,18 +64,14 @@ function App() {
   };
 
   useEffect(() => {
-    // Gestione Token di autorizzazione (rimane per sicurezza)
     const storedToken = localStorage.getItem('auth_token');
     if (storedToken === 'ALEASISTEMI') {
       setIsAuthenticated(true);
     } else if (APP_CONFIG.MODE === 'MOBILE_TOTEM') {
-      // Per il totem mezzi saltiamo la protezione token se necessario, 
-      // o la forziamo a true se vogliamo che l'APK sia "aperto"
       setIsAuthenticated(true);
       localStorage.setItem('auth_token', 'ALEASISTEMI');
     }
 
-    // LOGICA DI BOOT DIRETTO
     if (APP_CONFIG.MODE === 'MOBILE_TOTEM') {
         setViewMode('MOBILE_VEHICLE_KIOSK');
     } else {
@@ -195,7 +191,6 @@ function App() {
 
   const handleExitKiosk = () => { 
       if (APP_CONFIG.MODE === 'MOBILE_TOTEM') {
-          // In modalità totem mobile, l'uscita non fa nulla o ricarica l'app
           window.location.reload();
       } else {
           localStorage.removeItem('kiosk_mode'); 
@@ -243,6 +238,13 @@ function App() {
       }
       refreshData();
   }
+
+  // LOGICA PERMESSO DASHBOARD
+  const canAccessDashboard = currentUser && (
+      currentUser.role === Role.SYSTEM_ADMIN || 
+      currentUser.role === Role.DIRECTION || 
+      (permissions[currentUser.role] && permissions[currentUser.role].length > 0)
+  );
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-100"><Loader2 className="animate-spin text-blue-600" size={48} /></div>;
 
@@ -381,16 +383,19 @@ function App() {
                 <span className="text-sm font-black text-slate-800">Ciao, {currentUser?.name}</span>
             </div>
             
-            {!isWorkshopPanel ? (
-                <button onClick={() => setViewMode('WORKSHOP_PANEL')} className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition">
-                    <Wrench size={18} className="text-[#EC1D25]"/>
-                    <span>Pannello Operativo</span>
-                </button>
-            ) : (
-                <button onClick={() => setViewMode('DASHBOARD')} className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition">
-                    <LayoutDashboard size={18} className="text-blue-600"/>
-                    <span>Dashboard Amministrativa</span>
-                </button>
+            {/* PULSANTI DI SWITCHING DINAMICI BASATI SUI PERMESSI */}
+            {canAccessDashboard && (
+                !isWorkshopPanel ? (
+                    <button onClick={() => setViewMode('WORKSHOP_PANEL')} className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition">
+                        <Wrench size={18} className="text-[#EC1D25]"/>
+                        <span>Pannello Operativo</span>
+                    </button>
+                ) : (
+                    <button onClick={() => setViewMode('DASHBOARD')} className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition">
+                        <LayoutDashboard size={18} className="text-blue-600"/>
+                        <span>Dashboard Amministrativa</span>
+                    </button>
+                )
             )}
             
             <button onClick={handleLogout} className="p-2.5 text-slate-400 hover:text-red-600 bg-slate-50 rounded-full transition-colors border border-slate-100"><LogOut size={20} /></button>
