@@ -93,6 +93,7 @@ export enum JustificationType {
   FERIE = 'Ferie',
   MALATTIA = 'Malattia',
   PERMESSO = 'Permesso',
+  FESTIVO = 'Festivo',
   INGIUSTIFICATO = 'Assenza Ingiustificata',
   RITARDO_GIUSTIFICATO = 'Ritardo Giustificato'
 }
