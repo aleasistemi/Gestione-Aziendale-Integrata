@@ -498,9 +498,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
           const filename = `backup_alea_${new Date().toISOString().split('T')[0]}.json`;
           const formData = new FormData();
           
-          // --- FIX PABBLY: SOLO FILE ---
           formData.append('file', blob, filename);
-          // Niente json_content
 
           await fetch(settings.backupWebhookUrl, {
               method: 'POST',
@@ -520,6 +518,18 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
               window.location.reload();
           } catch(e) {
               alert("Errore durante la pulizia. Controlla la console.");
+          }
+      }
+  }
+
+  const handleResetFleet = async () => {
+      if (window.confirm("Sei sicuro di voler ripulire tutto lo storico dei mezzi e resettare lo stato di tutti i veicoli a 'Disponibile'?")) {
+          try {
+              await dbService.resetFleetLogs();
+              alert("Registro mezzi ripulito con successo. La pagina verrà ricaricata.");
+              window.location.reload();
+          } catch(e) {
+              alert("Errore durante il reset del parco mezzi.");
           }
       }
   }
@@ -545,19 +555,28 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
           let lastJobId: string | null = null;
 
           let headerIndex = -1;
-          for(let i=0; i<Math.min(data.length, 20); i++) {
+          for(let i=0; i<Math.min(data.length, 50); i++) {
               const row = data[i] as any[];
-              if(row.some(cell => cell && cell.toString().trim().toLowerCase() === 'riferimento')) {
+              if(row && row.some(cell => cell && cell.toString().trim().toLowerCase() === 'riferimento')) {
                   headerIndex = i;
                   break;
               }
           }
-          if(headerIndex === -1) { alert("Intestazione 'Riferimento' non trovata."); return; }
+          if(headerIndex === -1) { alert("Intestazione 'Riferimento' non trovata nel file Excel."); return; }
 
           const headerRow = data[headerIndex] as string[];
           const colMap: {[key:string]: number} = {};
-          headerRow.forEach((cell, idx) => { if(typeof cell === 'string') colMap[cell.trim()] = idx; });
-          const getCol = (row: any[], name: string) => { const idx = colMap[name]; return (idx !== undefined && row[idx] !== undefined) ? row[idx] : null; }
+          headerRow.forEach((cell, idx) => { 
+              if(cell) {
+                  const label = cell.toString().trim().toLowerCase();
+                  colMap[label] = idx; 
+              }
+          });
+
+          const getCol = (row: any[], name: string) => { 
+              const idx = colMap[name.toLowerCase()]; 
+              return (idx !== undefined && row[idx] !== undefined && row[idx] !== null) ? row[idx] : null; 
+          }
           
           const formatDate = (val: any) => {
               if(!val) return '';
@@ -567,17 +586,22 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                   return d.toISOString().split('T')[0];
               }
               if (typeof val === 'string') {
-                  if (val.includes('.')) {
-                    const parts = val.split('.');
+                  const cleaned = val.trim();
+                  if (cleaned.includes('.')) {
+                    const parts = cleaned.split('.');
                     if (parts.length === 3) {
                         let year = parseInt(parts[2]);
                         if (year < 100) year += 2000;
                         return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
                     }
                   }
-                  if (val.includes('/')) {
-                      const parts = val.split('/');
-                      if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+                  if (cleaned.includes('/')) {
+                      const parts = cleaned.split('/');
+                      if (parts.length === 3) {
+                          let year = parseInt(parts[2]);
+                          if (year < 100) year += 2000;
+                          return `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+                      }
                   }
               }
               return '';
@@ -585,30 +609,34 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
           for (let i = headerIndex + 1; i < data.length; i++) {
               const row = data[i] as any[];
-              if (row.length === 0) continue;
+              if (!row || row.length === 0) continue;
+              
               const code = getCol(row, 'Riferimento');
               const operatorRaw = getCol(row, 'Operatore');
-              if (!operatorRaw) continue; 
 
               if (code) {
                   const cleanCode = String(code).trim();
+                  if (cleanCode === "") continue;
+
                   let existingJob = jobs.find(j => j.code === cleanCode);
                   if (!existingJob) {
                       const batchId = codeToIdMap.get(cleanCode);
                       if (batchId) existingJob = jobsBatchMap.get(batchId);
                   }
+                  
                   let jobId: string;
                   if (existingJob) {
                       jobId = existingJob.id;
                       if (!jobsBatchMap.has(jobId)) jobsUpdated++;
                   } else {
-                      jobId = Date.now().toString() + Math.random().toString().slice(2,5);
+                      jobId = Date.now().toString() + Math.random().toString().slice(2,8);
                       codeToIdMap.set(cleanCode, jobId);
                       jobsCreated++;
                   }
                   
                   let rawStartDate = getCol(row, 'Data Inizio');
-                  if (!rawStartDate && row.length > 11) rawStartDate = row[11];
+                  const formattedDeadline = formatDate(getCol(row, 'Data Consegna'));
+                  const formattedCreation = formatDate(rawStartDate) || (existingJob ? existingJob.creationDate : new Date().toISOString().split('T')[0]);
 
                   const jobData: Job = {
                       id: jobId,
@@ -618,8 +646,8 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                       status: existingJob ? existingJob.status : JobStatus.IN_PROGRESS,
                       budgetHours: Number(getCol(row, 'Monte Ore') || 0),
                       budgetValue: Number(getCol(row, 'Valore') || 0),
-                      deadline: formatDate(getCol(row, 'Data Consegna')),
-                      creationDate: formatDate(rawStartDate) || (existingJob ? existingJob.creationDate : new Date().toISOString().split('T')[0]),
+                      deadline: formattedDeadline,
+                      creationDate: formattedCreation,
                       priority: existingJob ? (existingJob.priority || 3) : 3,
                       suggestedOperatorId: existingJob?.suggestedOperatorId
                   };
@@ -629,17 +657,20 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
               if (lastJobId && operatorRaw) {
                   const operatorName = String(operatorRaw).trim();
+                  if (operatorName === "" || operatorName.toLowerCase() === 'operatore') continue;
+
                   let emp = employees.find(e => e.name.toLowerCase().includes(operatorName.toLowerCase()));
                   if (!emp) {
                       for (const batchEmp of empsBatchMap.values()) {
-                          if (batchEmp.name.toLowerCase() === operatorName.toLowerCase()) {
+                          if (batchEmp.name.toLowerCase().includes(operatorName.toLowerCase())) {
                               emp = batchEmp;
                               break;
                           }
                       }
                   }
+                  
                   if (!emp) {
-                      const newEmpId = 'imp-' + Date.now() + Math.random().toString().slice(2,5);
+                      const newEmpId = 'imp-' + Date.now() + Math.random().toString().slice(2,8);
                       emp = {
                           id: newEmpId,
                           name: operatorName,
@@ -655,6 +686,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                       };
                       empsBatchMap.set(newEmpId, emp);
                   }
+                  
                   const hoursRaw = getCol(row, 'Ore');
                   let hours = 0;
                   if (typeof hoursRaw === 'number') hours = hoursRaw * 24;
@@ -662,33 +694,35 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                       const [h, m] = hoursRaw.split(':').map(Number);
                       hours = h + (m/60);
                   }
+                  
                   if (hours > 0) {
                        const logDate = formatDate(getCol(row, 'Data Inizio')) || new Date().toISOString().split('T')[0];
-                       const logId = `log-${lastJobId}-${emp.id}-${logDate}-${hours.toFixed(2)}`;
-                       const existsInDb = logs.some(l => l.id === logId);
-                       const existsInBatch = logsBatchList.some(l => l.id === logId);
-                       if (!existsInDb && !existsInBatch) {
-                           logsBatchList.push({
-                               id: logId,
-                               jobId: lastJobId,
-                               employeeId: emp.id,
-                               date: logDate,
-                               hours: hours,
-                               phase: 'Generica (Import)',
-                               notes: 'Importato da Excel'
-                           });
-                           logsCreated++;
-                       }
+                       const logId = `log-${lastJobId}-${emp.id}-${logDate}-${hours.toFixed(2)}-${Math.random().toString(36).substring(7)}`;
+                       
+                       logsBatchList.push({
+                           id: logId,
+                           jobId: lastJobId,
+                           employeeId: emp.id,
+                           date: logDate,
+                           hours: hours,
+                           phase: 'Generica (Import)',
+                           notes: 'Importato da Excel'
+                       });
+                       logsCreated++;
                   }
               }
           }
+          
           if (jobsBatchMap.size > 0 || logsBatchList.length > 0) {
               try {
                   await dbService.bulkImport(Array.from(jobsBatchMap.values()), logsBatchList, Array.from(empsBatchMap.values()));
-                  alert(`Importazione Completata!\nNuove: ${jobsCreated}, Aggiornate: ${jobsUpdated}, Log: ${logsCreated}`);
+                  alert(`Importazione Completata!\nNuove Commesse: ${jobsCreated}, Aggiornate: ${jobsUpdated}, Log Ore: ${logsCreated}`);
                   window.location.reload();
-              } catch (e) { alert("Errore salvataggio dati."); }
-          } else { alert("Nessun dato valido."); }
+              } catch (e) { 
+                  console.error("Bulk Import Error:", e);
+                  alert("Errore salvataggio dati nel database. Controlla la console per i dettagli."); 
+              }
+          } else { alert("Nessun dato valido trovato nel file per l'importazione."); }
       };
       reader.readAsBinaryString(file);
   };
@@ -919,6 +953,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       const ws = utils.json_to_sheet(data);
       const wb = utils.book_new();
       utils.book_append_sheet(wb, ws, "Riepilogo Paghe");
+      // Fix: changed 'workbook' to 'wb'
       writeFile(wb, `Riepilogo_Paghe_${selectedMonth}.xlsx`);
   };
 
@@ -1346,7 +1381,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
         )}
 
         {activeTab === 'AI' && (
-             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                  {!settings.geminiApiKey ? (<div className="flex flex-col items-center justify-center py-12 text-center"><div className="bg-orange-100 p-4 rounded-full mb-4"><Key className="text-orange-500" size={32}/></div><h3 className="text-xl font-bold text-slate-800 mb-2">Configurazione Richiesta</h3><p className="text-slate-500 max-w-md mb-6">Per utilizzare l'analista AI, è necessario inserire una API Key di Google Gemini valida nelle impostazioni.</p><button onClick={() => {if(isSystem) setActiveTab('CONFIG')}} className="text-blue-600 font-bold hover:underline">Vai alla Configurazione</button></div>) : (
                  <>
                     <div className="flex items-center gap-3 mb-6"><div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-2 rounded-lg"><BrainCircuit size={24} /></div><div><h2 className="text-xl font-bold text-slate-800">Analista Aziendale IA</h2><p className="text-slate-500 text-sm">Analisi predittiva e insight sui dati aziendali</p></div></div>
@@ -1456,7 +1491,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                         <div><label className="block text-sm font-medium text-slate-700">Data Inizio</label><input type="date" className="w-full border p-2 rounded" value={isEditingJob.creationDate || new Date().toISOString().split('T')[0]} onChange={e => setIsEditingJob({...isEditingJob, creationDate: e.target.value})} /></div>
                                         <div><label className="block text-sm font-medium text-slate-700">Priorità</label><div className="flex gap-1 mt-2">{[1,2,3,4,5].map(star => (<Star key={star} size={24} className={`cursor-pointer ${star <= (isEditingJob.priority || 3) ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} onClick={() => setIsEditingJob({...isEditingJob, priority: star})}/>))}</div></div>
                                         
-                                        {/* OPERATOR ASSIGNMENT FILTER UPDATED HERE */}
                                         <div>
                                             <label className="block text-sm font-medium text-slate-700 mb-1">Assegna a Operatore</label>
                                             <select className="w-full border p-2 rounded" value={isEditingJob.suggestedOperatorId || ''} onChange={e => setIsEditingJob({...isEditingJob, suggestedOperatorId: e.target.value})}>
@@ -1602,13 +1636,27 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                 </div>
 
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                    <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Database className="text-slate-600"/> Backup e Ripristino</h2>
-                    <p className="text-slate-500 mb-6">Esporta un file JSON completo di tutti i dati (Commesse, Dipendenti, Log, Impostazioni) o ripristina un backup precedente.</p>
-                    <div className="flex gap-4">
-                        <button onClick={handleBackupDownload} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-lg hover:bg-slate-900 transition"><Download size={20}/> Scarica Backup Completo</button>
-                        <div className="relative">
-                            <input type="file" ref={backupInputRef} onChange={handleBackupRestore} accept=".json" className="hidden"/>
-                            <button onClick={() => backupInputRef.current?.click()} className="flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition"><Upload size={20}/> Ripristina Backup</button>
+                    <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Database className="text-slate-600"/> Manutenzione Dati</h2>
+                    <p className="text-slate-500 mb-6 italic">Aree di reset per ripulire l'applicazione dopo i test iniziali.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="p-4 border border-red-100 rounded-xl bg-red-50/30">
+                            <h4 className="font-bold text-slate-800 mb-2">Registro Commesse e Ore</h4>
+                            <button onClick={handleResetJobs} className="flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition w-full justify-center"><Eraser size={20}/> Elimina Commesse e Ore</button>
+                        </div>
+                        <div className="p-4 border border-orange-100 rounded-xl bg-orange-50/30">
+                            <h4 className="font-bold text-slate-800 mb-2">Registro Parco Mezzi</h4>
+                            <button onClick={handleResetFleet} className="flex items-center gap-2 bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 transition w-full justify-center"><Truck size={20}/> Svuota Registro Mezzi</button>
+                        </div>
+                    </div>
+                    
+                    <div className="mt-8 pt-6 border-t">
+                        <h4 className="font-bold text-slate-800 mb-4">Backup Manuale</h4>
+                        <div className="flex gap-4">
+                            <button onClick={handleBackupDownload} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-lg hover:bg-slate-900 transition flex-1 justify-center"><Download size={20}/> Scarica Backup JSON</button>
+                            <div className="relative flex-1">
+                                <input type="file" ref={backupInputRef} onChange={handleBackupRestore} accept=".json" className="hidden"/>
+                                <button onClick={() => backupInputRef.current?.click()} className="flex items-center gap-2 bg-slate-200 text-slate-700 px-6 py-3 rounded-lg hover:bg-slate-300 transition w-full justify-center"><Upload size={20}/> Ripristina JSON</button>
+                            </div>
                         </div>
                     </div>
                 </div>
