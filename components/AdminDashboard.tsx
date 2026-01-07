@@ -104,18 +104,12 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const getAllowedTabs = () => {
       if (isSystem) return ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE', 'CONFIG'];
       if (currentUserRole === Role.DIRECTION) return ['OVERVIEW', 'JOBS', 'HR', 'FLEET', 'AI', 'MANAGE'];
+      
       const rolePerms = permissions[currentUserRole];
       if (rolePerms && rolePerms.length > 0) return rolePerms;
-      switch(currentUserRole) {
-          case Role.ADMIN:
-          case Role.ACCOUNTING:
-              return ['OVERVIEW', 'HR', 'FLEET', 'JOBS', 'MANAGE'];
-          case Role.SALES:
-          case Role.TECHNICAL:
-              return ['OVERVIEW', 'JOBS', 'MANAGE', 'FLEET', 'AI'];
-          default:
-              return ['OVERVIEW'];
-      }
+      
+      // Se non ci sono permessi espliciti configurati nel DB, restituiamo un array vuoto
+      return [];
   }
 
   const allowedTabsList = getAllowedTabs();
@@ -132,7 +126,20 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
   const availableTabs = allPossibleTabs.filter(t => allowedTabsList.includes(t.id));
 
-  const [activeTab, setActiveTab] = useState(availableTabs[0]?.id || 'OVERVIEW');
+  // Impostiamo il tab attivo sul primo disponibile, o null se non ce ne sono
+  const [activeTab, setActiveTab] = useState<string | null>(null);
+
+  useEffect(() => {
+      if (availableTabs.length > 0) {
+          // Se il tab corrente non è più tra quelli disponibili (es. cambio ruolo), resetta
+          if (!activeTab || !availableTabs.find(t => t.id === activeTab)) {
+              setActiveTab(availableTabs[0].id);
+          }
+      } else {
+          setActiveTab(null);
+      }
+  }, [currentUserRole, permissions, availableTabs]);
+
   const [manageSubTab, setManageSubTab] = useState<'JOBS' | 'EMPLOYEES'>('JOBS');
   
   const [selectedJobForAnalysis, setSelectedJobForAnalysis] = useState<string | null>(null);
@@ -158,12 +165,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   
   const [fleetCurrentMonth, setFleetCurrentMonth] = useState(new Date());
   const [fleetSelectedDate, setFleetSelectedDate] = useState<string | null>(null);
-
-  useEffect(() => {
-     if (availableTabs.length > 0 && !availableTabs.find(t => t.id === activeTab)) {
-         setActiveTab(availableTabs[0].id);
-     }
-  }, [currentUserRole, permissions, availableTabs]);
 
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiResponse, setAiResponse] = useState('');
@@ -553,7 +554,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
           let jobsCreated = 0; let jobsUpdated = 0; let logsCreated = 0;
           let lastJobContext: { id: string, code: string } | null = null;
 
-          // 1. TROVA L'INTESTAZIONE (CERCA "RIFERIMENTO" IN QUALSIASI COLONNA)
           let headerIndex = -1;
           for(let i=0; i<Math.min(data.length, 50); i++) {
               const row = data[i] as any[];
@@ -583,7 +583,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
               if(!val) return '';
               if (val instanceof Date) return val.toISOString().split('T')[0];
               const s = String(val).trim();
-              // Gestione DD.MM.YY o DD/MM/YY o DD.MM.YYYY
               const parts = s.split(/[./-]/);
               if (parts.length === 3) {
                   let day = parts[0].padStart(2, '0');
@@ -604,7 +603,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
               return Number(val) || 0;
           };
 
-          // 2. ELABORAZIONE RIGHE
           for (let i = headerIndex + 1; i < data.length; i++) {
               const row = data[i] as any[];
               if (!row || row.length === 0) continue;
@@ -613,7 +611,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
               const operatorRaw = getCol(row, 'Operatore');
               const hoursRaw = getCol(row, 'Ore');
 
-              // Se c'è un nuovo codice, aggiorniamo il contesto commessa
               if (codeRaw && String(codeRaw).trim() !== "") {
                   const code = String(codeRaw).trim();
                   let existingJob = jobs.find(j => j.code === code) || Array.from(jobsBatchMap.values()).find(j => j.code === code);
@@ -643,7 +640,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                   lastJobContext = { id: jobId, code: code };
               }
 
-              // Se c'è un operatore e delle ore, creiamo il log per la commessa corrente
               if (lastJobContext && operatorRaw && hoursRaw) {
                   const hours = parseHours(hoursRaw);
                   if (hours > 0) {
@@ -684,7 +680,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
               }
           }
           
-          // 3. SALVATAGGIO MASSIVO
           if (jobsBatchMap.size > 0 || logsBatchList.length > 0) {
               try {
                   await dbService.bulkImport(
@@ -963,6 +958,19 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       utils.book_append_sheet(wb, ws, `Cartellino_${emp.name.replace(/\s+/g, '_')}`);
       writeFile(wb, `Cartellino_${emp.name.replace(/\s+/g, '_')}_${selectedMonth}.xlsx`);
   };
+
+  if (availableTabs.length === 0 && !isGodMode) {
+      return (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+              <div className="bg-red-50 p-6 rounded-3xl border border-red-100 shadow-sm max-w-md">
+                  <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Accesso Negato</h2>
+                  <p className="text-slate-600 mb-6 italic">Il tuo profilo non ha permessi configurati per accedere alla Dashboard Amministrativa.</p>
+                  <p className="text-sm text-slate-400">Contatta l'amministratore del sistema.</p>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8 print:p-0 print:max-w-none bg-slate-50 min-h-screen">
