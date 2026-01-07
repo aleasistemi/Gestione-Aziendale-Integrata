@@ -829,7 +829,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
      const [year, month] = selectedMonth.split('-').map(Number);
      const daysInMonth = new Date(year, month, 0).getDate();
      return employees.map(emp => {
-         let totalWorked = 0, totalOvertime = 0, ferieCount = 0, malattiaCount = 0, permessoHours = 0, lateCount = 0, absenceCount = 0, daysWorked = 0;
+         let totalWorked = 0, totalOvertime = 0, ferieCount = 0, malattiaCount = 0, festivoCount = 0, permessoHours = 0, lateCount = 0, absenceCount = 0, daysWorked = 0;
          for(let d=1; d<=daysInMonth; d++) {
              const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
              const stats = calculateDailyStats(emp.id, dateStr);
@@ -837,14 +837,20 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
              totalOvertime += stats.overtime;
              if (stats.standardHours > 0) daysWorked++;
              if (stats.isLate) lateCount++;
-             if (stats.isAbsent) absenceCount++;
+             
+             // Conteggio assenze ingiustificate: automatico + manuale
+             if (stats.isAbsent || (stats.justification && stats.justification.type === JustificationType.INGIUSTIFICATO)) {
+                 absenceCount++;
+             }
+
              if (stats.justification) {
                  if (stats.justification.type === JustificationType.FERIE) ferieCount++;
                  if (stats.justification.type === JustificationType.MALATTIA) malattiaCount++;
+                 if (stats.justification.type === JustificationType.FESTIVO) festivoCount++;
                  if (stats.justification.type === JustificationType.PERMESSO) permessoHours += (stats.justification.hoursOffset || 0);
              }
          }
-         return { ...emp, totalWorked, totalOvertime, ferieCount, malattiaCount, permessoHours, lateCount, absenceCount, daysWorked };
+         return { ...emp, totalWorked, totalOvertime, ferieCount, malattiaCount, festivoCount, permessoHours, lateCount, absenceCount, daysWorked };
      });
   };
 
@@ -916,8 +922,9 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
           'Straordinari': stat.totalOvertime.toFixed(2),
           'Ferie (gg)': stat.ferieCount,
           'Malattia (gg)': stat.malattiaCount,
+          'Festività (gg)': stat.festivoCount,
           'Permessi (h)': stat.permessoHours,
-          'Assenze Ingiustificate': stat.absenceCount,
+          'Assenze Ing. (gg)': stat.absenceCount,
           'Ritardi': stat.lateCount
       }));
       const ws = utils.json_to_sheet(data);
@@ -1189,7 +1196,12 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                 </div>
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                      <div className="p-4 border-b border-slate-100 flex justify-between items-center"><h3 className="font-bold text-slate-700">Riepilogo Presenze Mensile</h3><button onClick={handleExportSummary} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm transition"><FileSpreadsheet size={16}/> Export Riepilogo Paghe</button></div>
-                    <table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Dipendente</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Giorni Pres.</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ore Ordinarie</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Straordinari</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Assenze/Ferie/Mal.</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{payrollStats.map(stat => (<tr key={stat.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{stat.name}<div className="text-xs text-slate-400">{stat.role}</div></td><td className="px-6 py-4 text-slate-500">{stat.daysWorked}</td><td className="px-6 py-4 font-bold text-slate-700">{stat.totalWorked.toFixed(2)}</td><td className="px-6 py-4 text-slate-500">{stat.totalOvertime > 0 ? <span className="text-orange-600 font-bold">{stat.totalOvertime.toFixed(2)}</span> : '-'}</td><td className="px-6 py-4 text-xs space-y-1">{stat.absenceCount > 0 && <div className="text-red-600 font-bold">Assenze Ing.: {stat.absenceCount} gg</div>}{stat.ferieCount > 0 && <div className="text-blue-600">Ferie: {stat.ferieCount} gg</div>}{stat.malattiaCount > 0 && <div className="text-purple-600">Malattia: {stat.malattiaCount} gg</div>}</td><td className="px-6 py-4 text-right"><button onClick={() => setSelectedEmpForDetail(stat.id)} className="bg-slate-100 hover:bg-blue-50 text-blue-600 px-3 py-1 rounded border border-slate-200 text-sm font-medium transition">Gestisci / Cartellino</button></td></tr>))}</tbody></table>
+                    <table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Dipendente</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Giorni Pres.</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Ore Ordinarie</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Straordinari</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Assenze/Ferie/Mal./Fest.</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{payrollStats.map(stat => (<tr key={stat.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{stat.name}<div className="text-xs text-slate-400">{stat.role}</div></td><td className="px-6 py-4 text-slate-500">{stat.daysWorked}</td><td className="px-6 py-4 font-bold text-slate-700">{stat.totalWorked.toFixed(2)}</td><td className="px-6 py-4 text-slate-500">{stat.totalOvertime > 0 ? <span className="text-orange-600 font-bold">{stat.totalOvertime.toFixed(2)}</span> : '-'}</td><td className="px-6 py-4 text-xs space-y-1">
+                        {stat.absenceCount > 0 && <div className="text-red-600 font-bold">Assenze Ing.: {stat.absenceCount} gg</div>}
+                        {stat.ferieCount > 0 && <div className="text-blue-600">Ferie: {stat.ferieCount} gg</div>}
+                        {stat.malattiaCount > 0 && <div className="text-purple-600">Malattia: {stat.malattiaCount} gg</div>}
+                        {stat.festivoCount > 0 && <div className="text-orange-600">Festivo: {stat.festivoCount} gg</div>}
+                    </td><td className="px-6 py-4 text-right"><button onClick={() => setSelectedEmpForDetail(stat.id)} className="bg-slate-100 hover:bg-blue-50 text-blue-600 px-3 py-1 rounded border border-slate-200 text-sm font-medium transition">Gestisci / Cartellino</button></td></tr>))}</tbody></table>
                 </div>
                 {selectedEmpForDetail && (
                     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
