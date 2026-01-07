@@ -154,10 +154,18 @@ class DatabaseService {
 
   async bulkImport(jobs: Job[], logs: WorkLog[], emps: Employee[]) {
       const BATCH_SIZE = 400;
-      const ops = [...emps.map(e=>({r:doc(db,'employees',e.id),d:e})), ...jobs.map(j=>({r:doc(db,'jobs',j.id),d:j})), ...logs.map(l=>({r:doc(db,'logs',l.id),d:l}))];
+      // Filtriamo per evitare oggetti undefined o con ID vuoti che bloccherebbero il batch
+      const ops = [
+          ...emps.filter(e => e?.id).map(e=>({r:doc(db,'employees',e.id),d:e})), 
+          ...jobs.filter(j => j?.id).map(j=>({r:doc(db,'jobs',j.id),d:j})), 
+          ...logs.filter(l => l?.id).map(l=>({r:doc(db,'logs',l.id),d:l}))
+      ];
+      
       for (let i=0; i<ops.length; i+=BATCH_SIZE) {
           const batch = writeBatch(db);
-          ops.slice(i, i+BATCH_SIZE).forEach(op => batch.set(op.r, op.d));
+          ops.slice(i, i+BATCH_SIZE).forEach(op => {
+              if (op.r && op.d) batch.set(op.r, op.d);
+          });
           await batch.commit();
       }
   }
@@ -171,16 +179,36 @@ class DatabaseService {
       await batch.commit();
   }
 
+  async resetFleetLogs() {
+      // Elimina tutti i log dei movimenti
+      const logsSnap = await getDocs(collection(db, 'vehicleLogs'));
+      const batch = writeBatch(db);
+      logsSnap.docs.forEach(d => batch.delete(d.ref));
+      
+      // Riporta tutti i veicoli allo stato Disponibile
+      const vehiclesSnap = await getDocs(collection(db, 'vehicles'));
+      vehiclesSnap.docs.forEach(d => {
+          const v = d.data() as Vehicle;
+          batch.set(d.ref, {
+              ...v,
+              status: 'AVAILABLE',
+              currentDriverId: null,
+              lastCheckOut: null
+          });
+      });
+      
+      await batch.commit();
+  }
+
   async exportDatabase() { 
       const data = await this.getAllData();
-      // Pretty print con indentazione a 2 spazi per leggibilità umana
       return JSON.stringify(data, null, 2); 
   }
   
   async importDatabase(json: string) {
       try {
           const d = JSON.parse(json);
-          await this.bulkImport(d.jobs, d.logs, d.employees);
+          await this.bulkImport(d.jobs || [], d.logs || [], d.employees || []);
           return true;
       } catch { return false; }
   }
