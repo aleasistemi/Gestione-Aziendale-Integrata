@@ -549,11 +549,11 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
           const jobsBatchMap = new Map<string, Job>();
           const empsBatchMap = new Map<string, Employee>();
           const logsBatchList: WorkLog[] = [];
-          const codeToIdMap = new Map<string, string>(); 
-
+          
           let jobsCreated = 0; let jobsUpdated = 0; let logsCreated = 0;
-          let lastJobId: string | null = null;
+          let lastJobContext: { id: string, code: string } | null = null;
 
+          // 1. TROVA L'INTESTAZIONE (CERCA "RIFERIMENTO" IN QUALSIASI COLONNA)
           let headerIndex = -1;
           for(let i=0; i<Math.min(data.length, 50); i++) {
               const row = data[i] as any[];
@@ -562,167 +562,145 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                   break;
               }
           }
-          if(headerIndex === -1) { alert("Intestazione 'Riferimento' non trovata nel file Excel."); return; }
+          
+          if(headerIndex === -1) { 
+              alert("Intestazione 'Riferimento' non trovata. Assicurati che il file abbia le colonne corrette."); 
+              return; 
+          }
 
           const headerRow = data[headerIndex] as string[];
           const colMap: {[key:string]: number} = {};
           headerRow.forEach((cell, idx) => { 
-              if(cell) {
-                  const label = cell.toString().trim().toLowerCase();
-                  colMap[label] = idx; 
-              }
+              if(cell) colMap[cell.toString().trim().toLowerCase()] = idx; 
           });
 
           const getCol = (row: any[], name: string) => { 
               const idx = colMap[name.toLowerCase()]; 
               return (idx !== undefined && row[idx] !== undefined && row[idx] !== null) ? row[idx] : null; 
-          }
+          };
           
-          const formatDate = (val: any) => {
+          const formatDateStr = (val: any) => {
               if(!val) return '';
               if (val instanceof Date) return val.toISOString().split('T')[0];
-              if (typeof val === 'number') {
-                  const d = new Date(Math.round((val - 25569)*86400*1000));
-                  return d.toISOString().split('T')[0];
-              }
-              if (typeof val === 'string') {
-                  const cleaned = val.trim();
-                  if (cleaned.includes('.')) {
-                    const parts = cleaned.split('.');
-                    if (parts.length === 3) {
-                        let year = parseInt(parts[2]);
-                        if (year < 100) year += 2000;
-                        return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                    }
-                  }
-                  if (cleaned.includes('/')) {
-                      const parts = cleaned.split('/');
-                      if (parts.length === 3) {
-                          let year = parseInt(parts[2]);
-                          if (year < 100) year += 2000;
-                          return `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
-                      }
-                  }
+              const s = String(val).trim();
+              // Gestione DD.MM.YY o DD/MM/YY o DD.MM.YYYY
+              const parts = s.split(/[./-]/);
+              if (parts.length === 3) {
+                  let day = parts[0].padStart(2, '0');
+                  let month = parts[1].padStart(2, '0');
+                  let year = parts[2];
+                  if (year.length === 2) year = "20" + year;
+                  return `${year}-${month}-${day}`;
               }
               return '';
-          }
+          };
 
+          const parseHours = (val: any) => {
+              if (typeof val === 'number') return val;
+              if (typeof val === 'string' && val.includes(':')) {
+                  const [h, m] = val.split(':').map(Number);
+                  return (h || 0) + (m || 0) / 60;
+              }
+              return Number(val) || 0;
+          };
+
+          // 2. ELABORAZIONE RIGHE
           for (let i = headerIndex + 1; i < data.length; i++) {
               const row = data[i] as any[];
               if (!row || row.length === 0) continue;
               
-              const code = getCol(row, 'Riferimento');
+              const codeRaw = getCol(row, 'Riferimento');
               const operatorRaw = getCol(row, 'Operatore');
+              const hoursRaw = getCol(row, 'Ore');
 
-              if (code) {
-                  const cleanCode = String(code).trim();
-                  if (cleanCode === "") continue;
-
-                  let existingJob = jobs.find(j => j.code === cleanCode);
-                  if (!existingJob) {
-                      const batchId = codeToIdMap.get(cleanCode);
-                      if (batchId) existingJob = jobsBatchMap.get(batchId);
-                  }
+              // Se c'è un nuovo codice, aggiorniamo il contesto commessa
+              if (codeRaw && String(codeRaw).trim() !== "") {
+                  const code = String(codeRaw).trim();
+                  let existingJob = jobs.find(j => j.code === code) || Array.from(jobsBatchMap.values()).find(j => j.code === code);
                   
                   let jobId: string;
                   if (existingJob) {
                       jobId = existingJob.id;
                       if (!jobsBatchMap.has(jobId)) jobsUpdated++;
                   } else {
-                      jobId = Date.now().toString() + Math.random().toString().slice(2,8);
-                      codeToIdMap.set(cleanCode, jobId);
+                      jobId = "job-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5);
                       jobsCreated++;
                   }
-                  
-                  let rawStartDate = getCol(row, 'Data Inizio');
-                  const formattedDeadline = formatDate(getCol(row, 'Data Consegna'));
-                  const formattedCreation = formatDate(rawStartDate) || (existingJob ? existingJob.creationDate : new Date().toISOString().split('T')[0]);
 
                   const jobData: Job = {
                       id: jobId,
-                      code: cleanCode,
+                      code: code,
                       clientName: String(getCol(row, 'Cliente') || 'Sconosciuto'),
                       description: String(getCol(row, 'Descrizione') || ''),
-                      status: existingJob ? existingJob.status : JobStatus.IN_PROGRESS,
+                      status: existingJob?.status || JobStatus.IN_PROGRESS,
                       budgetHours: Number(getCol(row, 'Monte Ore') || 0),
                       budgetValue: Number(getCol(row, 'Valore') || 0),
-                      deadline: formattedDeadline,
-                      creationDate: formattedCreation,
-                      priority: existingJob ? (existingJob.priority || 3) : 3,
-                      suggestedOperatorId: existingJob?.suggestedOperatorId
+                      deadline: formatDateStr(getCol(row, 'Data Consegna')),
+                      creationDate: formatDateStr(getCol(row, 'Data Inizio')) || new Date().toISOString().split('T')[0],
+                      priority: existingJob?.priority || 3
                   };
                   jobsBatchMap.set(jobId, jobData);
-                  lastJobId = jobId;
+                  lastJobContext = { id: jobId, code: code };
               }
 
-              if (lastJobId && operatorRaw) {
-                  const operatorName = String(operatorRaw).trim();
-                  if (operatorName === "" || operatorName.toLowerCase() === 'operatore') continue;
-
-                  let emp = employees.find(e => e.name.toLowerCase().includes(operatorName.toLowerCase()));
-                  if (!emp) {
-                      for (const batchEmp of empsBatchMap.values()) {
-                          if (batchEmp.name.toLowerCase().includes(operatorName.toLowerCase())) {
-                              emp = batchEmp;
-                              break;
-                          }
-                      }
-                  }
-                  
-                  if (!emp) {
-                      const newEmpId = 'imp-' + Date.now() + Math.random().toString().slice(2,8);
-                      emp = {
-                          id: newEmpId,
-                          name: operatorName,
-                          role: Role.WORKSHOP,
-                          hourlyRate: 30,
-                          department: 'Importato',
-                          toleranceMinutes: 10,
-                          scheduleStartMorning: "08:30",
-                          scheduleEndMorning: "12:30",
-                          scheduleStartAfternoon: "13:30",
-                          scheduleEndAfternoon: "17:30",
-                          workDays: [1,2,3,4,5]
-                      };
-                      empsBatchMap.set(newEmpId, emp);
-                  }
-                  
-                  const hoursRaw = getCol(row, 'Ore');
-                  let hours = 0;
-                  if (typeof hoursRaw === 'number') hours = hoursRaw * 24;
-                  else if (typeof hoursRaw === 'string' && hoursRaw.includes(':')) {
-                      const [h, m] = hoursRaw.split(':').map(Number);
-                      hours = h + (m/60);
-                  }
-                  
+              // Se c'è un operatore e delle ore, creiamo il log per la commessa corrente
+              if (lastJobContext && operatorRaw && hoursRaw) {
+                  const hours = parseHours(hoursRaw);
                   if (hours > 0) {
-                       const logDate = formatDate(getCol(row, 'Data Inizio')) || new Date().toISOString().split('T')[0];
-                       const logId = `log-${lastJobId}-${emp.id}-${logDate}-${hours.toFixed(2)}-${Math.random().toString(36).substring(7)}`;
-                       
-                       logsBatchList.push({
-                           id: logId,
-                           jobId: lastJobId,
-                           employeeId: emp.id,
-                           date: logDate,
-                           hours: hours,
-                           phase: 'Generica (Import)',
-                           notes: 'Importato da Excel'
-                       });
-                       logsCreated++;
+                      const opName = String(operatorRaw).trim();
+                      let emp = employees.find(e => e.name.toLowerCase().includes(opName.toLowerCase())) || 
+                                Array.from(empsBatchMap.values()).find(e => e.name.toLowerCase().includes(opName.toLowerCase()));
+                      
+                      if (!emp) {
+                          const newEmpId = "imp-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5);
+                          emp = {
+                              id: newEmpId,
+                              name: opName,
+                              role: Role.WORKSHOP,
+                              hourlyRate: 30,
+                              department: 'Importato',
+                              toleranceMinutes: 10,
+                              scheduleStartMorning: "08:30",
+                              scheduleEndMorning: "12:30",
+                              scheduleStartAfternoon: "13:30",
+                              scheduleEndAfternoon: "17:30",
+                              workDays: [1,2,3,4,5]
+                          };
+                          empsBatchMap.set(newEmpId, emp);
+                      }
+
+                      const logDate = formatDateStr(getCol(row, 'Data Inizio')) || new Date().toISOString().split('T')[0];
+                      logsBatchList.push({
+                          id: `log-${lastJobContext.id}-${emp.id}-${Date.now()}-${Math.random().toString(36).substr(2,5)}`,
+                          jobId: lastJobContext.id,
+                          employeeId: emp.id,
+                          date: logDate,
+                          hours: hours,
+                          phase: 'Generica (Import)',
+                          notes: 'Importato da Excel'
+                      });
+                      logsCreated++;
                   }
               }
           }
           
+          // 3. SALVATAGGIO MASSIVO
           if (jobsBatchMap.size > 0 || logsBatchList.length > 0) {
               try {
-                  await dbService.bulkImport(Array.from(jobsBatchMap.values()), logsBatchList, Array.from(empsBatchMap.values()));
-                  alert(`Importazione Completata!\nNuove Commesse: ${jobsCreated}, Aggiornate: ${jobsUpdated}, Log Ore: ${logsCreated}`);
+                  await dbService.bulkImport(
+                      Array.from(jobsBatchMap.values()), 
+                      logsBatchList, 
+                      Array.from(empsBatchMap.values())
+                  );
+                  alert(`Importazione riuscita!\n- Commesse: ${jobsCreated} nuove, ${jobsUpdated} aggiornate\n- Ore registrate: ${logsCreated}\n- Nuovi dipendenti: ${empsBatchMap.size}`);
                   window.location.reload();
-              } catch (e) { 
-                  console.error("Bulk Import Error:", e);
-                  alert("Errore salvataggio dati nel database. Controlla la console per i dettagli."); 
+              } catch (err) {
+                  console.error("Errore Database:", err);
+                  alert("Errore tecnico durante il salvataggio su Firebase. Verifica la console.");
               }
-          } else { alert("Nessun dato valido trovato nel file per l'importazione."); }
+          } else {
+              alert("Nessun dato valido trovato nel file.");
+          }
       };
       reader.readAsBinaryString(file);
   };
@@ -953,7 +931,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       const ws = utils.json_to_sheet(data);
       const wb = utils.book_new();
       utils.book_append_sheet(wb, ws, "Riepilogo Paghe");
-      // Fix: changed 'workbook' to 'wb'
       writeFile(wb, `Riepilogo_Paghe_${selectedMonth}.xlsx`);
   };
 
