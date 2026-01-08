@@ -209,14 +209,14 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
                   <label className="block text-sm font-medium text-slate-700 mb-1">Ore Lavorate</label>
                   <input 
                     type="number" 
-                    step="0.5" 
+                    step="0.25" 
                     min="0"
                     max="24"
                     className="w-full rounded-lg border-slate-300 border p-2.5 focus:ring-2 focus:ring-[#EC1D25] outline-none"
                     value={hours}
                     onChange={(e) => setHours(e.target.value)}
                     required
-                    placeholder="Es. 4.5"
+                    placeholder="Es. 4.25"
                   />
                 </div>
                 
