@@ -713,123 +713,113 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       }
   }
 
+  // ==========================================
+  // LOGICA CALCOLO ORE PERFETTA (SNAP 15m/30m)
+  // ==========================================
   const calculateDailyStats = (empId: string, dateStr: string) => {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return { standardHours: 0, overtime: 0, isLate: false, isAnomaly: false, isAbsent: false, firstIn: null, lastOut: null, lunchOut: null, lunchIn: null, records: [], justification: null, firstInId: null, lunchOutId: null, lunchInId: null, lastOutId: null };
 
-    const overtimeSnap = settings.overtimeSnapMinutes || 30;
-    const permessoSnap = settings.permessoSnapMinutes || 15;
-    const dateObj = new Date(dateStr);
-    const dayOfWeek = dateObj.getDay(); 
-    const todayStr = new Date().toISOString().split('T')[0];
-    const isWorkDay = (emp.workDays || [1,2,3,4,5]).includes(dayOfWeek);
-    const justification = justifications.find(j => j.employeeId === empId && j.date === dateStr);
+    const overtimeSnap = 30; // Scatto 30 min solo in uscita
+    const latenessSnap = 15; // Scatto 15 min per ritardi fuori tolleranza
     
     const dayAttendance = attendance
       .filter(a => a.employeeId === empId && a.timestamp.startsWith(dateStr))
       .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-    let firstIn = null, firstInId = null, firstInMins = 0;
-    let lunchOut = null, lunchOutId = null, lunchOutMins = 0;
-    let lunchIn = null, lunchInId = null, lunchInMins = 0;
-    let lastOut = null, lastOutId = null, lastOutMins = 0;
+    const justification = justifications.find(j => j.employeeId === empId && j.date === dateStr);
+    const dateObj = new Date(dateStr);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isWorkDay = (emp.workDays || [1,2,3,4,5]).includes(dateObj.getDay());
 
-    const getMinutes = (d: Date) => d.getHours() * 60 + d.getMinutes();
-    
     const parseTimeStr = (t: string | undefined | null) => { 
         if (!t) return 0;
-        const parts = t.split(':');
-        if (parts.length < 2) return 0;
-        const [h, m] = parts.map(Number); 
-        if (isNaN(h) || isNaN(m)) return 0;
+        const [h, m] = t.split(':').map(Number); 
         return h * 60 + m; 
     };
 
-    if (dayAttendance.length > 0 && dayAttendance[0].type === 'ENTRATA') {
-        const d = new Date(dayAttendance[0].timestamp);
-        firstIn = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
-        firstInMins = getMinutes(d);
-        firstInId = dayAttendance[0].id;
-    }
-    
-    if (dayAttendance.length >= 2 && dayAttendance[1].type === 'USCITA') {
-         const d = new Date(dayAttendance[1].timestamp);
-         if (dayAttendance.length >= 3) {
-             lunchOut = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
-             lunchOutMins = getMinutes(d);
-             lunchOutId = dayAttendance[1].id;
-         } else {
-             lastOut = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
-             lastOutMins = getMinutes(d);
-             lastOutId = dayAttendance[1].id;
-         }
-    }
-    if (dayAttendance.length >= 3 && dayAttendance[2].type === 'ENTRATA') {
-        const d = new Date(dayAttendance[2].timestamp);
-        lunchIn = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
-        lunchInMins = getMinutes(d);
-        lunchInId = dayAttendance[2].id;
-    }
-    if (dayAttendance.length >= 4 && dayAttendance[3].type === 'USCITA') {
-        const d = new Date(dayAttendance[3].timestamp);
-        lastOut = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
-        lastOutMins = getMinutes(d);
-        lastOutId = dayAttendance[3].id;
-    }
+    const getMinutes = (dStr: string) => {
+        const d = new Date(dStr);
+        return d.getHours() * 60 + d.getMinutes();
+    };
 
-    let standardHours = 0;
-    let overtime = 0;
     const schStartM = parseTimeStr(emp.scheduleStartMorning || "08:30");
     const schEndM = parseTimeStr(emp.scheduleEndMorning || "12:30");
     const schStartA = parseTimeStr(emp.scheduleStartAfternoon || "13:30");
     const schEndA = parseTimeStr(emp.scheduleEndAfternoon || "17:30");
     const tolerance = emp.toleranceMinutes || 0;
 
-    if (firstIn && (lunchOut || lastOut)) {
-        const exitMins = lunchOut ? lunchOutMins : lastOutMins; 
-        
-        // CORREZIONE TOLLERANZA: se l'entrata è entro il grace period, considera l'orario contrattuale
-        const effectiveStart = (firstInMins <= schStartM + tolerance) ? Math.min(firstInMins, schStartM) : firstInMins;
-        const effectiveEnd = Math.min(exitMins, schEndM);
-        
-        if (effectiveEnd > effectiveStart) standardHours += (effectiveEnd - effectiveStart) / 60;
+    // Identificazione blocchi timbrate
+    let firstInMins = dayAttendance[0]?.type === 'ENTRATA' ? getMinutes(dayAttendance[0].timestamp) : null;
+    let lunchOutMins = dayAttendance.length >= 3 && dayAttendance[1]?.type === 'USCITA' ? getMinutes(dayAttendance[1].timestamp) : null;
+    let lunchInMins = dayAttendance.length >= 3 && dayAttendance[2]?.type === 'ENTRATA' ? getMinutes(dayAttendance[2].timestamp) : null;
+    let lastOutMins = dayAttendance.length >= 2 && dayAttendance[dayAttendance.length - 1]?.type === 'USCITA' ? getMinutes(dayAttendance[dayAttendance.length - 1].timestamp) : null;
+
+    let standardMinutes = 0;
+    let overtimeMinutes = 0;
+    let isLate = false;
+
+    // Helper: Inizio pagato con snap 15m se fuori tolleranza
+    const getEffectiveStart = (realMins: number, schedMins: number) => {
+        if (realMins <= schedMins + tolerance) return schedMins; // Entro tolleranza o in anticipo -> Orario standard
+        // Fuori tolleranza -> snap al blocco di 15m successivo
+        const delay = realMins - schedMins;
+        const snappedDelay = Math.ceil(delay / latenessSnap) * latenessSnap;
+        return schedMins + snappedDelay;
+    };
+
+    // 1. Calcolo Mattina
+    if (firstInMins !== null) {
+        const start = getEffectiveStart(firstInMins, schStartM);
+        const exitForMorning = lunchOutMins || lastOutMins;
+        if (exitForMorning) {
+            const end = Math.min(exitForMorning, schEndM);
+            if (end > start) standardMinutes += (end - start);
+        }
+        if (firstInMins > schStartM + tolerance) isLate = true;
     }
 
-    if (lunchIn && lastOut) {
-        // CORREZIONE TOLLERANZA POMERIDIANA
-        const effectiveStart = (lunchInMins <= schStartA + tolerance) ? Math.min(lunchInMins, schStartA) : lunchInMins;
-        
-        let effectiveEnd = lastOutMins;
-        if (lastOutMins < schEndA) {
-            const rawMissing = schEndA - lastOutMins;
-            const deductionMinutes = Math.ceil(rawMissing / permessoSnap) * permessoSnap;
-            effectiveEnd = schEndA - deductionMinutes;
-        } else {
-            effectiveEnd = schEndA;
-        }
-        if (effectiveEnd > effectiveStart) standardHours += (effectiveEnd - effectiveStart) / 60;
-        if (lastOutMins > schEndA) {
-            const diffMinutes = lastOutMins - schEndA;
-            const blocks = Math.floor(diffMinutes / overtimeSnap);
-            overtime += blocks * (overtimeSnap / 60);
-        }
-    } else if (!lunchOut && firstIn && lastOut) {
-        if (lastOutMins > schEndA) {
-             const diffMinutes = lastOutMins - schEndA;
-             const blocks = Math.floor(diffMinutes / overtimeSnap);
-             overtime += blocks * (overtimeSnap / 60);
+    // 2. Calcolo Pomeriggio
+    if (lunchInMins !== null && lastOutMins !== null) {
+        const start = getEffectiveStart(lunchInMins, schStartA);
+        const end = Math.min(lastOutMins, schEndA);
+        if (end > start) standardMinutes += (end - start);
+        if (lunchInMins > schStartA + tolerance) isLate = true;
+    } else if (firstInMins !== null && lastOutMins !== null && !lunchOutMins) {
+        // Caso turno unico senza pausa bollata
+        if (lastOutMins > schStartA) {
+            const startA = getEffectiveStart(Math.max(firstInMins, schStartA), schStartA);
+            const endA = Math.min(lastOutMins, schEndA);
+            if (endA > startA) standardMinutes += (endA - startA);
         }
     }
 
-    let isLate = false, isAnomaly = false, isAbsent = false;
-    if (firstIn && !justification) {
-        const limitMinutes = schStartM + (emp.toleranceMinutes || 10);
-        if (firstInMins > limitMinutes) isLate = true;
+    // 3. Straordinari: SOLO su ultima uscita rispetto a fine turno pomeridiano (Snap 30m arrotondato per DIFETTO)
+    if (lastOutMins !== null && lastOutMins > schEndA) {
+        const extra = lastOutMins - schEndA;
+        overtimeMinutes = Math.floor(extra / overtimeSnap) * overtimeSnap;
     }
-    if (dateStr < todayStr && dayAttendance.length % 2 !== 0) isAnomaly = true;
-    if (dateStr < todayStr && isWorkDay && dayAttendance.length === 0 && !justification) isAbsent = true;
 
-    return { standardHours, overtime, isLate, isAnomaly, isAbsent, firstIn, lunchOut, lunchIn, lastOut, firstInId, lunchOutId, lunchInId, lastOutId, records: dayAttendance, justification };
+    const standardHours = standardMinutes / 60;
+    const overtimeHours = overtimeMinutes / 60;
+
+    return { 
+        standardHours, 
+        overtime: overtimeHours, 
+        isLate, 
+        isAnomaly: dateStr < todayStr && dayAttendance.length > 0 && dayAttendance.length % 2 !== 0,
+        isAbsent: dateStr < todayStr && isWorkDay && dayAttendance.length === 0 && !justification,
+        firstIn: firstInMins ? new Date(dayAttendance[0].timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : null,
+        lunchOut: lunchOutMins ? new Date(dayAttendance[1].timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : null,
+        lunchIn: lunchInMins ? new Date(dayAttendance[2].timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : null,
+        lastOut: lastOutMins ? new Date(dayAttendance[dayAttendance.length-1].timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : null,
+        firstInId: dayAttendance[0]?.id,
+        lunchOutId: dayAttendance.length >= 3 ? dayAttendance[1].id : null,
+        lunchInId: dayAttendance.length >= 3 ? dayAttendance[2].id : null,
+        lastOutId: dayAttendance.length >= 2 ? dayAttendance[dayAttendance.length-1].id : null,
+        records: dayAttendance, 
+        justification 
+    };
   };
 
   const getPayrollData = () => {
@@ -845,7 +835,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
              if (stats.standardHours > 0) daysWorked++;
              if (stats.isLate) lateCount++;
              
-             // Conteggio assenze ingiustificate: automatico + manuale
              if (stats.isAbsent || (stats.justification && stats.justification.type === JustificationType.INGIUSTIFICATO)) {
                  absenceCount++;
              }
