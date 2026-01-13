@@ -246,14 +246,13 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
       const isOverBudget = totalHoursUsed > job.budgetHours;
       const profitMargin = job.budgetValue - totalCost;
-      const marginPercentage = job.budgetValue > 0 ? (profitMargin / job.budgetValue) * 100 : 0;
 
       const sortedLogs = [...jobLogs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       const startDate = sortedLogs.length > 0 ? sortedLogs[sortedLogs.length-1].date : job.creationDate || '-';
       const lastLog = sortedLogs.length > 0 ? sortedLogs[0] : null;
       const lastPhase = lastLog ? lastLog.phase : '-';
 
-      return { ...job, totalHoursUsed, totalCost, profitMargin, marginPercentage, isOverBudget, startDate, lastPhase };
+      return { ...job, totalHoursUsed, totalCost, profitMargin, isOverBudget, startDate, lastPhase };
     });
   }, [jobs, logs, employees]);
 
@@ -713,113 +712,117 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       }
   }
 
-  // ==========================================
-  // LOGICA CALCOLO ORE PERFETTA (SNAP 15m/30m)
-  // ==========================================
   const calculateDailyStats = (empId: string, dateStr: string) => {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return { standardHours: 0, overtime: 0, isLate: false, isAnomaly: false, isAbsent: false, firstIn: null, lastOut: null, lunchOut: null, lunchIn: null, records: [], justification: null, firstInId: null, lunchOutId: null, lunchInId: null, lastOutId: null };
 
-    const overtimeSnap = 30; // Scatto 30 min solo in uscita
-    const latenessSnap = 15; // Scatto 15 min per ritardi fuori tolleranza
+    const overtimeSnap = settings.overtimeSnapMinutes || 30;
+    const permessoSnap = settings.permessoSnapMinutes || 15;
+    const dateObj = new Date(dateStr);
+    const dayOfWeek = dateObj.getDay(); 
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isWorkDay = (emp.workDays || [1,2,3,4,5]).includes(dayOfWeek);
+    const justification = justifications.find(j => j.employeeId === empId && j.date === dateStr);
     
     const dayAttendance = attendance
       .filter(a => a.employeeId === empId && a.timestamp.startsWith(dateStr))
       .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-    const justification = justifications.find(j => j.employeeId === empId && j.date === dateStr);
-    const dateObj = new Date(dateStr);
-    const todayStr = new Date().toISOString().split('T')[0];
-    const isWorkDay = (emp.workDays || [1,2,3,4,5]).includes(dateObj.getDay());
+    let firstIn = null, firstInId = null, firstInMins = 0;
+    let lunchOut = null, lunchOutId = null, lunchOutMins = 0;
+    let lunchIn = null, lunchInId = null, lunchInMins = 0;
+    let lastOut = null, lastOutId = null, lastOutMins = 0;
 
+    const getMinutes = (d: Date) => d.getHours() * 60 + d.getMinutes();
+    
     const parseTimeStr = (t: string | undefined | null) => { 
         if (!t) return 0;
-        const [h, m] = t.split(':').map(Number); 
+        const parts = t.split(':');
+        if (parts.length < 2) return 0;
+        const [h, m] = parts.map(Number); 
+        if (isNaN(h) || isNaN(m)) return 0;
         return h * 60 + m; 
     };
 
-    const getMinutes = (dStr: string) => {
-        const d = new Date(dStr);
-        return d.getHours() * 60 + d.getMinutes();
-    };
+    if (dayAttendance.length > 0 && dayAttendance[0].type === 'ENTRATA') {
+        const d = new Date(dayAttendance[0].timestamp);
+        firstIn = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        firstInMins = getMinutes(d);
+        firstInId = dayAttendance[0].id;
+    }
+    
+    if (dayAttendance.length >= 2 && dayAttendance[1].type === 'USCITA') {
+         const d = new Date(dayAttendance[1].timestamp);
+         if (dayAttendance.length >= 3) {
+             lunchOut = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+             lunchOutMins = getMinutes(d);
+             lunchOutId = dayAttendance[1].id;
+         } else {
+             lastOut = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+             lastOutMins = getMinutes(d);
+             lastOutId = dayAttendance[1].id;
+         }
+    }
+    if (dayAttendance.length >= 3 && dayAttendance[2].type === 'ENTRATA') {
+        const d = new Date(dayAttendance[2].timestamp);
+        lunchIn = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        lunchInMins = getMinutes(d);
+        lunchInId = dayAttendance[2].id;
+    }
+    if (dayAttendance.length >= 4 && dayAttendance[3].type === 'USCITA') {
+        const d = new Date(dayAttendance[3].timestamp);
+        lastOut = d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+        lastOutMins = getMinutes(d);
+        lastOutId = dayAttendance[3].id;
+    }
 
+    let standardHours = 0;
+    let overtime = 0;
     const schStartM = parseTimeStr(emp.scheduleStartMorning || "08:30");
     const schEndM = parseTimeStr(emp.scheduleEndMorning || "12:30");
     const schStartA = parseTimeStr(emp.scheduleStartAfternoon || "13:30");
     const schEndA = parseTimeStr(emp.scheduleEndAfternoon || "17:30");
-    const tolerance = emp.toleranceMinutes || 0;
 
-    // Identificazione blocchi timbrate
-    let firstInMins = dayAttendance[0]?.type === 'ENTRATA' ? getMinutes(dayAttendance[0].timestamp) : null;
-    let lunchOutMins = dayAttendance.length >= 3 && dayAttendance[1]?.type === 'USCITA' ? getMinutes(dayAttendance[1].timestamp) : null;
-    let lunchInMins = dayAttendance.length >= 3 && dayAttendance[2]?.type === 'ENTRATA' ? getMinutes(dayAttendance[2].timestamp) : null;
-    let lastOutMins = dayAttendance.length >= 2 && dayAttendance[dayAttendance.length - 1]?.type === 'USCITA' ? getMinutes(dayAttendance[dayAttendance.length - 1].timestamp) : null;
-
-    let standardMinutes = 0;
-    let overtimeMinutes = 0;
-    let isLate = false;
-
-    // Helper: Inizio pagato con snap 15m se fuori tolleranza
-    const getEffectiveStart = (realMins: number, schedMins: number) => {
-        if (realMins <= schedMins + tolerance) return schedMins; // Entro tolleranza o in anticipo -> Orario standard
-        // Fuori tolleranza -> snap al blocco di 15m successivo
-        const delay = realMins - schedMins;
-        const snappedDelay = Math.ceil(delay / latenessSnap) * latenessSnap;
-        return schedMins + snappedDelay;
-    };
-
-    // 1. Calcolo Mattina
-    if (firstInMins !== null) {
-        const start = getEffectiveStart(firstInMins, schStartM);
-        const exitForMorning = lunchOutMins || lastOutMins;
-        if (exitForMorning) {
-            const end = Math.min(exitForMorning, schEndM);
-            if (end > start) standardMinutes += (end - start);
-        }
-        if (firstInMins > schStartM + tolerance) isLate = true;
+    if (firstIn && (lunchOut || lastOut)) {
+        const exitMins = lunchOut ? lunchOutMins : lastOutMins; 
+        const effectiveStart = Math.max(firstInMins, schStartM);
+        const effectiveEnd = Math.min(exitMins, schEndM);
+        if (effectiveEnd > effectiveStart) standardHours += (effectiveEnd - effectiveStart) / 60;
     }
 
-    // 2. Calcolo Pomeriggio
-    if (lunchInMins !== null && lastOutMins !== null) {
-        const start = getEffectiveStart(lunchInMins, schStartA);
-        const end = Math.min(lastOutMins, schEndA);
-        if (end > start) standardMinutes += (end - start);
-        if (lunchInMins > schStartA + tolerance) isLate = true;
-    } else if (firstInMins !== null && lastOutMins !== null && !lunchOutMins) {
-        // Caso turno unico senza pausa bollata
-        if (lastOutMins > schStartA) {
-            const startA = getEffectiveStart(Math.max(firstInMins, schStartA), schStartA);
-            const endA = Math.min(lastOutMins, schEndA);
-            if (endA > startA) standardMinutes += (endA - startA);
+    if (lunchIn && lastOut) {
+        const effectiveStart = Math.max(lunchInMins, schStartA);
+        let effectiveEnd = lastOutMins;
+        if (lastOutMins < schEndA) {
+            const rawMissing = schEndA - lastOutMins;
+            const deductionMinutes = Math.ceil(rawMissing / permessoSnap) * permessoSnap;
+            effectiveEnd = schEndA - deductionMinutes;
+        } else {
+            effectiveEnd = schEndA;
+        }
+        if (effectiveEnd > effectiveStart) standardHours += (effectiveEnd - effectiveStart) / 60;
+        if (lastOutMins > schEndA) {
+            const diffMinutes = lastOutMins - schEndA;
+            const blocks = Math.floor(diffMinutes / overtimeSnap);
+            overtime += blocks * (overtimeSnap / 60);
+        }
+    } else if (!lunchOut && firstIn && lastOut) {
+        if (lastOutMins > schEndA) {
+             const diffMinutes = lastOutMins - schEndA;
+             const blocks = Math.floor(diffMinutes / overtimeSnap);
+             overtime += blocks * (overtimeSnap / 60);
         }
     }
 
-    // 3. Straordinari: SOLO su ultima uscita rispetto a fine turno pomeridiano (Snap 30m arrotondato per DIFETTO)
-    if (lastOutMins !== null && lastOutMins > schEndA) {
-        const extra = lastOutMins - schEndA;
-        overtimeMinutes = Math.floor(extra / overtimeSnap) * overtimeSnap;
+    let isLate = false, isAnomaly = false, isAbsent = false;
+    if (firstIn && !justification) {
+        const limitMinutes = schStartM + (emp.toleranceMinutes || 10);
+        if (firstInMins > limitMinutes) isLate = true;
     }
+    if (dateStr < todayStr && dayAttendance.length % 2 !== 0) isAnomaly = true;
+    if (dateStr < todayStr && isWorkDay && dayAttendance.length === 0 && !justification) isAbsent = true;
 
-    const standardHours = standardMinutes / 60;
-    const overtimeHours = overtimeMinutes / 60;
-
-    return { 
-        standardHours, 
-        overtime: overtimeHours, 
-        isLate, 
-        isAnomaly: dateStr < todayStr && dayAttendance.length > 0 && dayAttendance.length % 2 !== 0,
-        isAbsent: dateStr < todayStr && isWorkDay && dayAttendance.length === 0 && !justification,
-        firstIn: firstInMins ? new Date(dayAttendance[0].timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : null,
-        lunchOut: lunchOutMins ? new Date(dayAttendance[1].timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : null,
-        lunchIn: lunchInMins ? new Date(dayAttendance[2].timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : null,
-        lastOut: lastOutMins ? new Date(dayAttendance[dayAttendance.length-1].timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : null,
-        firstInId: dayAttendance[0]?.id,
-        lunchOutId: dayAttendance.length >= 3 ? dayAttendance[1].id : null,
-        lunchInId: dayAttendance.length >= 3 ? dayAttendance[2].id : null,
-        lastOutId: dayAttendance.length >= 2 ? dayAttendance[dayAttendance.length-1].id : null,
-        records: dayAttendance, 
-        justification 
-    };
+    return { standardHours, overtime, isLate, isAnomaly, isAbsent, firstIn, lunchOut, lunchIn, lastOut, firstInId, lunchOutId, lunchInId, lastOutId, records: dayAttendance, justification };
   };
 
   const getPayrollData = () => {
@@ -835,6 +838,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
              if (stats.standardHours > 0) daysWorked++;
              if (stats.isLate) lateCount++;
              
+             // Conteggio assenze ingiustificate: automatico + manuale
              if (stats.isAbsent || (stats.justification && stats.justification.type === JustificationType.INGIUSTIFICATO)) {
                  absenceCount++;
              }
@@ -1143,9 +1147,8 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                 <th onClick={() => requestSort('code', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Commessa {renderSortArrow('code', jobSort)}</th>
                                 <th onClick={() => requestSort('clientName', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Cliente {renderSortArrow('clientName', jobSort)}</th>
                                 <th onClick={() => requestSort('totalHoursUsed', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Ore {renderSortArrow('totalHoursUsed', jobSort)}</th>
-                                <th onClick={() => requestSort('budgetValue', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Valore {renderSortArrow('budgetValue', jobSort)}</th>
-                                <th onClick={() => requestSort('profitMargin', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Risultato {renderSortArrow('profitMargin', jobSort)}</th>
-                                <th onClick={() => requestSort('marginPercentage', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Margine % {renderSortArrow('marginPercentage', jobSort)}</th>
+                                <th onClick={() => requestSort('profitMargin', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Margine {renderSortArrow('profitMargin', jobSort)}</th>
+                                <th onClick={() => requestSort('deadline', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Scadenza {renderSortArrow('deadline', jobSort)}</th>
                                 <th onClick={() => requestSort('status', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Stato {renderSortArrow('status', jobSort)}</th>
                                 <th className="px-6 py-3"></th>
                             </tr>
@@ -1156,10 +1159,9 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                     <td className="px-6 py-4"><input type="checkbox" className="rounded border-slate-300" checked={selectedJobIds.has(job.id)} onChange={(e) => {const newSet = new Set(selectedJobIds); if (e.target.checked) newSet.add(job.id); else newSet.delete(job.id); setSelectedJobIds(newSet);}}/></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 cursor-pointer" onClick={() => setSelectedJobForAnalysis(job.id)}>{job.code}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{job.clientName}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><div className="flex items-center gap-2"><div className="w-16 bg-slate-200 rounded-full h-2.5"><div className={`h-2.5 rounded-full ${job.isOverBudget ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min((job.totalHoursUsed / job.budgetHours) * 100, 100)}%` }}></div></div><span>{job.totalHoursUsed.toFixed(1)}/{job.budgetHours}</span></div></td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">€ {job.budgetValue.toLocaleString()}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><div className="flex items-center gap-2"><div className="w-24 bg-slate-200 rounded-full h-2.5"><div className={`h-2.5 rounded-full ${job.isOverBudget ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min((job.totalHoursUsed / job.budgetHours) * 100, 100)}%` }}></div></div><span>{job.totalHoursUsed.toFixed(1)}/{job.budgetHours}</span></div></td>
                                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${job.profitMargin < 0 ? 'text-red-600' : 'text-green-600'}`}>€ {job.profitMargin.toLocaleString()}</td>
-                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${job.marginPercentage < 0 ? 'text-red-600' : 'text-green-600'}`}>{job.marginPercentage.toFixed(1)}%</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{job.deadline ? new Date(job.deadline).toLocaleDateString('it-IT') : '-'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${job.status === JobStatus.IN_PROGRESS ? 'bg-green-100 text-green-800' : job.status === JobStatus.PLANNED ? 'bg-blue-100 text-blue-800' : job.status === JobStatus.COMPLETED ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-800'}`}>{job.status}</span></td>
                                     <td className="px-6 py-4 text-right"><Info size={16} className="text-slate-400 hover:text-blue-500 cursor-pointer" onClick={() => setSelectedJobForAnalysis(job.id)} /></td>
                                 </tr>
@@ -1350,7 +1352,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
                 {isEditingVehicle && (
                     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-white p-6 rounded-xl w-full max-md shadow-xl">
+                        <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-xl">
                             <h3 className="text-lg font-bold mb-4">{isEditingVehicle.id ? 'Modifica Veicolo' : 'Nuovo Veicolo'}</h3>
                             <div className="space-y-4">
                                 <div>
