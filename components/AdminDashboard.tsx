@@ -246,13 +246,14 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
       const isOverBudget = totalHoursUsed > job.budgetHours;
       const profitMargin = job.budgetValue - totalCost;
+      const marginPercentage = job.budgetValue > 0 ? (profitMargin / job.budgetValue) * 100 : 0;
 
       const sortedLogs = [...jobLogs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       const startDate = sortedLogs.length > 0 ? sortedLogs[sortedLogs.length-1].date : job.creationDate || '-';
       const lastLog = sortedLogs.length > 0 ? sortedLogs[0] : null;
       const lastPhase = lastLog ? lastLog.phase : '-';
 
-      return { ...job, totalHoursUsed, totalCost, profitMargin, isOverBudget, startDate, lastPhase };
+      return { ...job, totalHoursUsed, totalCost, profitMargin, marginPercentage, isOverBudget, startDate, lastPhase };
     });
   }, [jobs, logs, employees]);
 
@@ -782,16 +783,22 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
     const schEndM = parseTimeStr(emp.scheduleEndMorning || "12:30");
     const schStartA = parseTimeStr(emp.scheduleStartAfternoon || "13:30");
     const schEndA = parseTimeStr(emp.scheduleEndAfternoon || "17:30");
+    const tolerance = emp.toleranceMinutes || 0;
 
     if (firstIn && (lunchOut || lastOut)) {
         const exitMins = lunchOut ? lunchOutMins : lastOutMins; 
-        const effectiveStart = Math.max(firstInMins, schStartM);
+        
+        // CORREZIONE TOLLERANZA: se l'entrata è entro il grace period, considera l'orario contrattuale
+        const effectiveStart = (firstInMins <= schStartM + tolerance) ? Math.min(firstInMins, schStartM) : firstInMins;
         const effectiveEnd = Math.min(exitMins, schEndM);
+        
         if (effectiveEnd > effectiveStart) standardHours += (effectiveEnd - effectiveStart) / 60;
     }
 
     if (lunchIn && lastOut) {
-        const effectiveStart = Math.max(lunchInMins, schStartA);
+        // CORREZIONE TOLLERANZA POMERIDIANA
+        const effectiveStart = (lunchInMins <= schStartA + tolerance) ? Math.min(lunchInMins, schStartA) : lunchInMins;
+        
         let effectiveEnd = lastOutMins;
         if (lastOutMins < schEndA) {
             const rawMissing = schEndA - lastOutMins;
@@ -1147,8 +1154,9 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                 <th onClick={() => requestSort('code', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Commessa {renderSortArrow('code', jobSort)}</th>
                                 <th onClick={() => requestSort('clientName', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Cliente {renderSortArrow('clientName', jobSort)}</th>
                                 <th onClick={() => requestSort('totalHoursUsed', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Ore {renderSortArrow('totalHoursUsed', jobSort)}</th>
-                                <th onClick={() => requestSort('profitMargin', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Margine {renderSortArrow('profitMargin', jobSort)}</th>
-                                <th onClick={() => requestSort('deadline', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Scadenza {renderSortArrow('deadline', jobSort)}</th>
+                                <th onClick={() => requestSort('budgetValue', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Valore {renderSortArrow('budgetValue', jobSort)}</th>
+                                <th onClick={() => requestSort('profitMargin', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Risultato {renderSortArrow('profitMargin', jobSort)}</th>
+                                <th onClick={() => requestSort('marginPercentage', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Margine % {renderSortArrow('marginPercentage', jobSort)}</th>
                                 <th onClick={() => requestSort('status', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Stato {renderSortArrow('status', jobSort)}</th>
                                 <th className="px-6 py-3"></th>
                             </tr>
@@ -1159,9 +1167,10 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                     <td className="px-6 py-4"><input type="checkbox" className="rounded border-slate-300" checked={selectedJobIds.has(job.id)} onChange={(e) => {const newSet = new Set(selectedJobIds); if (e.target.checked) newSet.add(job.id); else newSet.delete(job.id); setSelectedJobIds(newSet);}}/></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 cursor-pointer" onClick={() => setSelectedJobForAnalysis(job.id)}>{job.code}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{job.clientName}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><div className="flex items-center gap-2"><div className="w-24 bg-slate-200 rounded-full h-2.5"><div className={`h-2.5 rounded-full ${job.isOverBudget ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min((job.totalHoursUsed / job.budgetHours) * 100, 100)}%` }}></div></div><span>{job.totalHoursUsed.toFixed(1)}/{job.budgetHours}</span></div></td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><div className="flex items-center gap-2"><div className="w-16 bg-slate-200 rounded-full h-2.5"><div className={`h-2.5 rounded-full ${job.isOverBudget ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min((job.totalHoursUsed / job.budgetHours) * 100, 100)}%` }}></div></div><span>{job.totalHoursUsed.toFixed(1)}/{job.budgetHours}</span></div></td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">€ {job.budgetValue.toLocaleString()}</td>
                                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${job.profitMargin < 0 ? 'text-red-600' : 'text-green-600'}`}>€ {job.profitMargin.toLocaleString()}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{job.deadline ? new Date(job.deadline).toLocaleDateString('it-IT') : '-'}</td>
+                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${job.marginPercentage < 0 ? 'text-red-600' : 'text-green-600'}`}>{job.marginPercentage.toFixed(1)}%</td>
                                     <td className="px-6 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${job.status === JobStatus.IN_PROGRESS ? 'bg-green-100 text-green-800' : job.status === JobStatus.PLANNED ? 'bg-blue-100 text-blue-800' : job.status === JobStatus.COMPLETED ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-800'}`}>{job.status}</span></td>
                                     <td className="px-6 py-4 text-right"><Info size={16} className="text-slate-400 hover:text-blue-500 cursor-pointer" onClick={() => setSelectedJobForAnalysis(job.id)} /></td>
                                 </tr>
@@ -1352,7 +1361,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
                 {isEditingVehicle && (
                     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-xl">
+                        <div className="bg-white p-6 rounded-xl w-full max-md shadow-xl">
                             <h3 className="text-lg font-bold mb-4">{isEditingVehicle.id ? 'Modifica Veicolo' : 'Nuovo Veicolo'}</h3>
                             <div className="space-y-4">
                                 <div>
