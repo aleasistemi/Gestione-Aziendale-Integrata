@@ -780,13 +780,11 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
     let standardMinutes = 0;
     let overtimeHours = 0;
 
-    // Helper per l'inizio effettivo pagato (Scatto ritardo 15m)
     const getEffectiveStart = (real: number, sched: number) => {
         if (real <= sched + tolerance) return sched;
         return sched + (Math.ceil((real - sched) / latenessSnap) * latenessSnap);
     };
 
-    // Helper per la fine effettiva pagata (Scatto uscita anticipata 15m - ARROTONDAMENTO PER DIFETTO)
     const getEffectiveEnd = (real: number, sched: number) => {
         if (real >= sched) return sched;
         const missing = sched - real;
@@ -794,7 +792,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
         return sched - snappedMissing;
     };
 
-    // 1. Calcolo Mattina
     if (firstInMins !== null) {
         const start = getEffectiveStart(firstInMins, schStartM);
         const morningExit = lunchOutMins !== null ? lunchOutMins : (lunchInMins === null ? lastOutMins : null);
@@ -804,7 +801,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
         }
     }
 
-    // 2. Calcolo Pomeriggio
     let afterStartMins: number | null = null;
     if (lunchInMins !== null) {
         afterStartMins = getEffectiveStart(lunchInMins, schStartA);
@@ -817,7 +813,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
         if (end > afterStartMins) standardMinutes += (end - afterStartMins);
     }
 
-    // 3. Straordinari: Solo su ultima uscita vs fine turno pomeridiano (Snap 30m Floor)
     if (lastOutMins !== null && lastOutMins > schEndA) {
         const extra = lastOutMins - schEndA;
         overtimeHours = (Math.floor(extra / overtimeSnap) * overtimeSnap) / 60;
@@ -826,7 +821,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
     let isLate = false;
     if (firstInMins !== null && firstInMins > schStartM + tolerance) isLate = true;
 
-    // Arrotondamento finale per evitare problemi di precisione float (es. 6.18)
     const finalStandardHours = Math.round((standardMinutes / 60) * 100) / 100;
 
     return { 
@@ -850,9 +844,23 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
      const daysInMonth = new Date(year, month, 0).getDate();
      return employees.map(emp => {
          let totalWorked = 0, totalOvertime = 0, ferieCount = 0, malattiaCount = 0, festivoCount = 0, permessoHours = 0, lateCount = 0, absenceCount = 0, daysWorked = 0;
+         
+         const parseTime = (t: string | undefined) => { 
+             const timeStr = t || "00:00";
+             const [h, m] = timeStr.split(':').map(Number); 
+             return (h || 0) * 60 + (m || 0); 
+         };
+         
+         const morningExpected = parseTime(emp.scheduleEndMorning || "12:30") - parseTime(emp.scheduleStartMorning || "08:30");
+         const afternoonExpected = parseTime(emp.scheduleEndAfternoon || "17:30") - parseTime(emp.scheduleStartAfternoon || "13:30");
+         const dailyContractualHours = Math.max(0, (morningExpected + afternoonExpected) / 60);
+
          for(let d=1; d<=daysInMonth; d++) {
              const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
              const stats = calculateDailyStats(emp.id, dateStr);
+             const dateObj = new Date(dateStr);
+             const isWorkDay = (emp.workDays || [1,2,3,4,5]).includes(dateObj.getDay());
+
              totalWorked += stats.standardHours;
              totalOvertime += stats.overtime;
              if (stats.standardHours > 0) daysWorked++;
@@ -866,9 +874,28 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                  if (stats.justification.type === JustificationType.FERIE) ferieCount++;
                  if (stats.justification.type === JustificationType.MALATTIA) malattiaCount++;
                  if (stats.justification.type === JustificationType.FESTIVO) festivoCount++;
-                 if (stats.justification.type === JustificationType.PERMESSO) permessoHours += (stats.justification.hoursOffset || 0);
+             }
+
+             // --- LOGICA CALCOLO PERMESSI (GAP ORE) ---
+             const isCoveredByOther = stats.justification && 
+                 [JustificationType.FERIE, JustificationType.MALATTIA, JustificationType.FESTIVO, JustificationType.INGIUSTIFICATO].includes(stats.justification.type);
+             
+             if (isWorkDay && !isCoveredByOther) {
+                 // Caso 1: Giustificativo manuale di tipo PERMESSO
+                 if (stats.justification?.type === JustificationType.PERMESSO) {
+                     permessoHours += Math.max(0, dailyContractualHours - stats.standardHours);
+                 } 
+                 // Caso 2: Ha lavorato ma meno del dovuto (ritardo o uscita anticipata rilevati)
+                 else if (stats.standardHours > 0 && stats.standardHours < dailyContractualHours) {
+                     permessoHours += (dailyContractualHours - stats.standardHours);
+                 }
+                 // Caso 3: Solo se l'utente ha timbrato in ritardo ma non ha giustificativo (già coperto dal Caso 2)
              }
          }
+         
+         // Arrotondamento finale ore permesso per pulizia Excel
+         permessoHours = Math.round(permessoHours * 100) / 100;
+         
          return { ...emp, totalWorked, totalOvertime, ferieCount, malattiaCount, festivoCount, permessoHours, lateCount, absenceCount, daysWorked };
      });
   };
