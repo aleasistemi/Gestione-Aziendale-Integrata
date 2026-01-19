@@ -95,7 +95,8 @@ export enum JustificationType {
   PERMESSO = 'Permesso',
   FESTIVO = 'Festivo',
   INGIUSTIFICATO = 'Assenza Ingiustificata',
-  RITARDO_GIUSTIFICATO = 'Ritardo Giustificato'
+  RITARDO_GIUSTIFICATO = 'Ritardo Giustificato',
+  CONGEDO = 'Congedo'
 }
 
 export interface DayJustification {
