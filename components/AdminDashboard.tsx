@@ -521,6 +521,27 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       }
   }
 
+  const handleDeleteJobPermanently = async (jobId: string) => {
+      if (window.confirm("Sei sicuro di voler eliminare DEFINITIVAMENTE questa commessa e tutto il suo storico ore? Questa azione non è reversibile.")) {
+          try {
+              await dbService.deleteJob(jobId);
+              alert("Commessa eliminata!");
+              window.location.reload();
+          } catch (e) { alert("Errore durante l'eliminazione."); }
+      }
+  }
+
+  const handleBulkDeletePermanently = async () => {
+      if (window.confirm(`Sei sicuro di voler eliminare DEFINITIVAMENTE le ${selectedJobIds.size} commesse selezionate e tutto il loro storico ore? Questa azione non è reversibile.`)) {
+          try {
+              await dbService.deleteJobsBulk(Array.from(selectedJobIds));
+              setSelectedJobIds(new Set());
+              alert("Commesse eliminate!");
+              window.location.reload();
+          } catch (e) { alert("Errore durante l'eliminazione massiva."); }
+      }
+  }
+
   const handleResetFleet = async () => {
       if (window.confirm("Sei sicuro di voler ripulire tutto lo storico dei mezzi e resettare lo stato di tutti i veicoli a 'Disponibile'?")) {
           try {
@@ -713,9 +734,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       }
   }
 
-  // ==========================================
-  // LOGICA CALCOLO ORE RIGOROSA (SNAP 15m/30m)
-  // ==========================================
   const calculateDailyStats = (empId: string, dateStr: string) => {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return { standardHours: 0, overtime: 0, isLate: false, isAnomaly: false, isAbsent: false, firstIn: null, lastOut: null, lunchOut: null, lunchIn: null, records: [], justification: null, firstInId: null, lunchOutId: null, lunchInId: null, lastOutId: null };
@@ -877,24 +895,19 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                  if (stats.justification.type === JustificationType.CONGEDO) congedoCount++;
              }
 
-             // --- LOGICA CALCOLO PERMESSI (GAP ORE) ---
              const isCoveredByOther = stats.justification && 
                  [JustificationType.FERIE, JustificationType.MALATTIA, JustificationType.FESTIVO, JustificationType.INGIUSTIFICATO, JustificationType.CONGEDO].includes(stats.justification.type);
              
              if (isWorkDay && !isCoveredByOther) {
-                 // Caso 1: Giustificativo manuale di tipo PERMESSO
                  if (stats.justification?.type === JustificationType.PERMESSO) {
                      permessoHours += Math.max(0, dailyContractualHours - stats.standardHours);
                  } 
-                 // Caso 2: Ha lavorato ma meno del dovuto (ritardo o uscita anticipata rilevati)
                  else if (stats.standardHours > 0 && stats.standardHours < dailyContractualHours) {
                      permessoHours += (dailyContractualHours - stats.standardHours);
                  }
-                 // Caso 3: Solo se l'utente ha timbrato in ritardo ma non ha giustificativo (già coperto dal Caso 2)
              }
          }
          
-         // Arrotondamento finale ore permesso per pulizia Excel
          permessoHours = Math.round(permessoHours * 100) / 100;
          
          return { ...emp, totalWorked, totalOvertime, ferieCount, malattiaCount, festivoCount, congedoCount, permessoHours, lateCount, absenceCount, daysWorked };
@@ -1183,7 +1196,15 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                             <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="outline-none text-slate-600 w-28"/>
                             {(filterStartDate || filterEndDate) && <button onClick={() => {setFilterStartDate(''); setFilterEndDate('')}}><X size={14}/></button>}
                         </div>
-                        {selectedJobIds.size > 0 && (<div className="flex items-center gap-2 bg-white px-3 py-1 rounded shadow-sm border border-slate-200"><span className="text-xs font-bold text-blue-600">{selectedJobIds.size} selezionati</span><div className="h-4 w-px bg-slate-300 mx-1"></div><button onClick={() => handleBulkStatusChange(JobStatus.COMPLETED)} className="text-xs hover:text-green-600 font-medium">Completata</button><button onClick={() => handleBulkStatusChange(JobStatus.IN_PROGRESS)} className="text-xs hover:text-blue-600 font-medium">In Corso</button><button onClick={() => handleBulkStatusChange(JobStatus.ON_HOLD)} className="text-xs hover:text-orange-600 font-medium">Sospesa</button></div>)}
+                        {selectedJobIds.size > 0 && (
+                            <div className="flex items-center gap-2 bg-white px-3 py-1 rounded shadow-sm border border-slate-200">
+                                <span className="text-xs font-bold text-blue-600">{selectedJobIds.size} selezionati</span>
+                                <div className="h-4 w-px bg-slate-300 mx-1"></div>
+                                <button onClick={() => handleBulkStatusChange(JobStatus.COMPLETED)} className="text-xs hover:text-green-600 font-medium">Completata</button>
+                                <button onClick={() => handleBulkStatusChange(JobStatus.IN_PROGRESS)} className="text-xs hover:text-blue-600 font-medium">In Corso</button>
+                                <button onClick={() => handleBulkStatusChange(JobStatus.ON_HOLD)} className="text-xs hover:text-orange-600 font-medium">Sospesa</button>
+                            </div>
+                        )}
                     </div>
                     <div className="flex gap-2">{isGodMode && <button onClick={() => handleExcelExportJobs(sortedJobStats)} className="flex items-center gap-2 text-green-600 bg-green-50 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-100 border border-green-200 transition"><FileSpreadsheet size={16}/> Esporta Excel</button>}</div>
                 </div>
@@ -1429,7 +1450,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
         {activeTab === 'AI' && (
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                 {!settings.geminiApiKey ? (<div className="flex flex-col items-center justify-center py-12 text-center"><div className="bg-orange-100 p-4 rounded-full mb-4"><Key className="text-orange-500" size={32}/></div><h3 className="text-xl font-bold text-slate-800 mb-2">Configurazione Richiesta</h3><p className="text-slate-500 max-w-md mb-6">Per utilizzare l'analista AI, è necessario inserire una API Key di Google Gemini valida nelle impostazioni.</p><button onClick={() => {if(isSystem) setActiveTab('CONFIG')}} className="text-blue-600 font-bold hover:underline">Vai alla Configurazione</button></div>) : (
+                 {!settings.geminiApiKey ? (<div className="flex flex-col items-center justify-center py-12 text-center"><div className="bg-orange-100 p-4 rounded-full mb-4"><Key className="text-orange-500" size={32}/></div><h3 className="text-xl font-bold text-slate-800 mb-2">Configurazione Richiesta</h3><p className="text-slate-500 max-w-md mb-6">Per utilizzare l'analista IA, è necessario inserire una API Key di Google Gemini valida nelle impostazioni.</p><button onClick={() => {if(isSystem) setActiveTab('CONFIG')}} className="text-blue-600 font-bold hover:underline">Vai alla Configurazione</button></div>) : (
                  <>
                     <div className="flex items-center gap-3 mb-6"><div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-2 rounded-lg"><BrainCircuit size={24} /></div><div><h2 className="text-xl font-bold text-slate-800">Analista Aziendale IA</h2><p className="text-slate-500 text-sm">Analisi predittiva e insight sui dati aziendali</p></div></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">{customPrompts.map((prompt) => (<div key={prompt.id} className="relative group">{editingPromptId === prompt.id ? (<div className="p-3 bg-white border-2 border-blue-500 rounded-lg shadow-lg z-10 absolute top-0 left-0 w-full min-w-[200px]"><input type="text" className="w-full text-xs font-bold mb-2 border-b outline-none" value={tempPromptLabel} onChange={(e) => setTempPromptLabel(e.target.value)} placeholder="Etichetta"/><textarea className="w-full text-xs p-1 border rounded resize-none outline-none mb-2" rows={3} value={tempPromptText} onChange={(e) => setTempPromptText(e.target.value)} placeholder="Domanda per IA..."/><div className="flex justify-end gap-1"><button onClick={() => setEditingPromptId(null)} className="p-1 hover:bg-slate-100 rounded text-slate-500"><X size={14}/></button><button onClick={() => handleSavePrompt(prompt.id)} className="p-1 hover:bg-green-100 text-green-600 rounded"><Save size={14}/></button></div></div>) : (<button onClick={() => handleAskAI(prompt.prompt)} className="w-full p-3 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 border border-slate-200 rounded-lg text-left transition relative h-full flex flex-col justify-between group-hover:shadow-md"><span className="text-sm font-semibold text-slate-700 block mb-1">{prompt.label}</span><span className="text-xs text-slate-400 line-clamp-2">{prompt.prompt}</span><div onClick={(e) => { e.stopPropagation(); setEditingPromptId(prompt.id); setTempPromptLabel(prompt.label); setTempPromptText(prompt.prompt); }} className="absolute top-2 right-2 p-1 text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition"><Pencil size={12} /></div></button>)}</div>))}</div>
@@ -1487,6 +1508,16 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                 <button onClick={() => { setIsEditingJob({}); setClientSearchTerm(''); }} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"><Plus size={18} /> Nuova</button>
                             </div>
                         </div>
+
+                        {selectedJobIds.size > 0 && viewArchiveYear !== 'active' && (
+                            <div className="mb-4 flex items-center gap-4 bg-red-50 p-3 rounded-lg border border-red-100 animate-in slide-in-from-top-2">
+                                <span className="text-sm font-bold text-red-700">{selectedJobIds.size} commesse in archivio selezionate</span>
+                                <button onClick={handleBulkDeletePermanently} className="flex items-center gap-2 bg-red-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-red-700 shadow-sm transition">
+                                    <Trash2 size={14}/> Elimina Definitivamente
+                                </button>
+                            </div>
+                        )}
+
                         {isEditingJob && (
                             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                                 <div className="bg-white p-6 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
@@ -1554,19 +1585,50 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                 </div>
                             </div>
                         )}
-                        <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200"><thead className="bg-slate-50"><tr><th onClick={() => requestSort('code', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer whitespace-nowrap">Codice {renderSortArrow('code', manageJobSort)}</th><th onClick={() => requestSort('clientName', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer whitespace-nowrap">Cliente {renderSortArrow('clientName', manageJobSort)}</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Descrizione</th><th onClick={() => requestSort('priority', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer whitespace-nowrap">Priorità {renderSortArrow('priority', manageJobSort)}</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Data Inizio</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Budget/Valore</th><th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Stato</th><th className="px-6 py-3"></th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{sortedManageJobs.map((job) => (<tr key={job.id} className="hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-900">{job.code}</td><td className="px-6 py-4 text-slate-500">{job.clientName}</td><td className="px-6 py-4 text-slate-400 text-xs truncate max-w-[200px]" title={job.description}>{job.description}</td><td className="px-6 py-4 text-slate-500 flex gap-1">{Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}</td><td className="px-6 py-4 text-slate-500 text-xs">{job.creationDate ? new Date(job.creationDate).toLocaleDateString('it-IT') : '-'}</td><td className="px-6 py-4 text-slate-500">{job.budgetHours}h / €{job.budgetValue}</td><td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td><td className="px-6 py-4 flex gap-2">
-                            <button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800"><Edit2 size={18}/></button>
-                            {!job.isArchived && job.status === JobStatus.COMPLETED && (
-                                <button onClick={() => handleArchiveJob(job)} className="text-slate-400 hover:text-orange-600" title="Archivia"><Archive size={18}/></button>
-                            )}
-                            {job.isArchived && (
-                                <button onClick={() => handleRestoreJob(job)} className="text-orange-600 hover:text-green-600" title="Ripristina da Archivio"><RotateCcw size={18}/></button>
-                            )}
-                        </td></tr>))}
-                        {sortedManageJobs.length === 0 && (
-                            <tr><td colSpan={8} className="text-center py-8 text-slate-400 italic">Nessuna commessa trovata.</td></tr>
-                        )}
-                        </tbody></table></div>
+                        <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200">
+                            <thead className="bg-slate-50">
+                                <tr>
+                                    <th className="px-6 py-3 w-10"><input type="checkbox" className="rounded border-slate-300" onChange={(e) => {if(e.target.checked) setSelectedJobIds(new Set(sortedManageJobs.map(j => j.id))); else setSelectedJobIds(new Set());}} checked={selectedJobIds.size === sortedManageJobs.length && sortedManageJobs.length > 0}/></th>
+                                    <th onClick={() => requestSort('code', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer whitespace-nowrap">Codice {renderSortArrow('code', manageJobSort)}</th>
+                                    <th onClick={() => requestSort('clientName', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer whitespace-nowrap">Cliente {renderSortArrow('clientName', manageJobSort)}</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Descrizione</th>
+                                    <th onClick={() => requestSort('priority', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer whitespace-nowrap">Priorità {renderSortArrow('priority', manageJobSort)}</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Data Inizio</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Budget/Valore</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Stato</th>
+                                    <th className="px-6 py-3"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-slate-200">
+                                {sortedManageJobs.map((job) => (
+                                    <tr key={job.id} className={`hover:bg-slate-50 ${selectedJobIds.has(job.id) ? 'bg-blue-50' : ''}`}>
+                                        <td className="px-6 py-4"><input type="checkbox" className="rounded border-slate-300" checked={selectedJobIds.has(job.id)} onChange={(e) => {const newSet = new Set(selectedJobIds); if (e.target.checked) newSet.add(job.id); else newSet.delete(job.id); setSelectedJobIds(newSet);}}/></td>
+                                        <td className="px-6 py-4 font-medium text-slate-900">{job.code}</td>
+                                        <td className="px-6 py-4 text-slate-500">{job.clientName}</td>
+                                        <td className="px-6 py-4 text-slate-400 text-xs truncate max-w-[200px]" title={job.description}>{job.description}</td>
+                                        <td className="px-6 py-4 text-slate-500 flex gap-1">{Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}</td>
+                                        <td className="px-6 py-4 text-slate-500 text-xs">{job.creationDate ? new Date(job.creationDate).toLocaleDateString('it-IT') : '-'}</td>
+                                        <td className="px-6 py-4 text-slate-500">{job.budgetHours}h / €{job.budgetValue}</td>
+                                        <td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td>
+                                        <td className="px-6 py-4 flex gap-2">
+                                            <button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800" title="Modifica"><Edit2 size={18}/></button>
+                                            {!job.isArchived && job.status === JobStatus.COMPLETED && (
+                                                <button onClick={() => handleArchiveJob(job)} className="text-slate-400 hover:text-orange-600" title="Archivia"><Archive size={18}/></button>
+                                            )}
+                                            {job.isArchived && (
+                                                <>
+                                                    <button onClick={() => handleRestoreJob(job)} className="text-orange-600 hover:text-green-600" title="Ripristina da Archivio"><RotateCcw size={18}/></button>
+                                                    <button onClick={() => handleDeleteJobPermanently(job.id)} className="text-red-400 hover:text-red-600" title="Elimina Definitivamente"><Trash2 size={18}/></button>
+                                                </>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {sortedManageJobs.length === 0 && (
+                                    <tr><td colSpan={9} className="text-center py-8 text-slate-400 italic">Nessuna commessa trovata.</td></tr>
+                                )}
+                            </tbody>
+                        </table></div>
                     </div>
                 )}
                 {manageSubTab === 'EMPLOYEES' && (canManageEmployees || isSystem) && (
