@@ -139,6 +139,29 @@ class DatabaseService {
   }
   async deleteAttendance(id: string) { await deleteDoc(doc(db, 'attendance', id)); }
   async saveJob(job: Job) { await setDoc(doc(db, 'jobs', job.id), job); }
+  
+  async deleteJob(jobId: string) {
+      const logsSnap = await getDocs(collection(db, 'logs'));
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'jobs', jobId));
+      logsSnap.docs.forEach(d => {
+          if (d.data().jobId === jobId) batch.delete(d.ref);
+      });
+      await batch.commit();
+  }
+
+  async deleteJobsBulk(jobIds: string[]) {
+      const logsSnap = await getDocs(collection(db, 'logs'));
+      const batch = writeBatch(db);
+      jobIds.forEach(id => {
+          batch.delete(doc(db, 'jobs', id));
+          logsSnap.docs.forEach(d => {
+              if (d.data().jobId === id) batch.delete(d.ref);
+          });
+      });
+      await batch.commit();
+  }
+
   async saveEmployee(emp: Employee) { await setDoc(doc(db, 'employees', emp.id), emp); }
   async saveJustification(just: DayJustification) { await setDoc(doc(db, 'justifications', just.id), just); }
   async saveAiPrompts(p: AIQuickPrompt[]) { 
@@ -154,7 +177,6 @@ class DatabaseService {
 
   async bulkImport(jobs: Job[], logs: WorkLog[], emps: Employee[]) {
       const BATCH_SIZE = 400;
-      // Filtriamo per evitare oggetti undefined o con ID vuoti che bloccherebbero il batch
       const ops = [
           ...emps.filter(e => e?.id).map(e=>({r:doc(db,'employees',e.id),d:e})), 
           ...jobs.filter(j => j?.id).map(j=>({r:doc(db,'jobs',j.id),d:j})), 
@@ -180,12 +202,10 @@ class DatabaseService {
   }
 
   async resetFleetLogs() {
-      // Elimina tutti i log dei movimenti
       const logsSnap = await getDocs(collection(db, 'vehicleLogs'));
       const batch = writeBatch(db);
       logsSnap.docs.forEach(d => batch.delete(d.ref));
       
-      // Riporta tutti i veicoli allo stato Disponibile
       const vehiclesSnap = await getDocs(collection(db, 'vehicles'));
       vehiclesSnap.docs.forEach(d => {
           const v = d.data() as Vehicle;
