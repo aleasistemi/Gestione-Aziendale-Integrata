@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Employee, Job, WorkLog, AttendanceRecord, JobStatus, Role, DayJustification, JustificationType, AIQuickPrompt, RolePermissions, GlobalSettings, Vehicle, VehicleLog } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -1221,7 +1220,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                 <th onClick={() => requestSort('profitMargin', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100 whitespace-nowrap">Risultato {renderSortArrow('profitMargin', jobSort)}</th>
                                 <th onClick={() => requestSort('marginPercentage', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100 whitespace-nowrap">Margine % {renderSortArrow('marginPercentage', jobSort)}</th>
                                 <th onClick={() => requestSort('status', jobSort, setJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer hover:bg-slate-100 whitespace-nowrap">Stato {renderSortArrow('status', jobSort)}</th>
-                                <th className="px-6 py-3"></th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-slate-200">
@@ -1236,7 +1234,6 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${job.profitMargin < 0 ? 'text-red-600' : 'text-green-600'}`}>€ {job.profitMargin.toLocaleString()}</td>
                                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${job.marginPercentage < 0 ? 'text-red-600' : 'text-green-600'}`}>{job.marginPercentage.toFixed(1)}%</td>
                                     <td className="px-6 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${job.status === JobStatus.IN_PROGRESS ? 'bg-green-100 text-green-800' : job.status === JobStatus.PLANNED ? 'bg-blue-100 text-blue-800' : job.status === JobStatus.COMPLETED ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-800'}`}>{job.status}</span></td>
-                                    <td className="px-6 py-4 text-right"><Info size={16} className="text-slate-400 hover:text-blue-500 cursor-pointer" onClick={() => setSelectedJobForAnalysis(job.id)} /></td>
                                 </tr>
                             ))}
                         </tbody>
