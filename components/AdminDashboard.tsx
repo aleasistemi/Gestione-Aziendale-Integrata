@@ -243,9 +243,9 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
         return acc + (log.hours * (emp ? emp.hourlyRate : 0));
       }, 0);
 
-      const isOverBudget = totalHoursUsed > job.budgetHours;
-      const profitMargin = job.budgetValue - totalCost;
-      const marginPercentage = job.budgetValue > 0 ? (profitMargin / job.budgetValue) * 100 : 0;
+      const isOverBudget = totalHoursUsed > (job.budgetHours || 0);
+      const profitMargin = (job.budgetValue || 0) - totalCost;
+      const marginPercentage = (job.budgetValue || 0) > 0 ? (profitMargin / (job.budgetValue || 0)) * 100 : 0;
 
       const sortedLogs = [...jobLogs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       const startDate = sortedLogs.length > 0 ? sortedLogs[sortedLogs.length-1].date : job.creationDate || '-';
@@ -346,7 +346,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const topClientsByRevenue = useMemo(() => {
       const map: {[key:string]: number} = {};
       overviewJobStats.forEach(j => {
-          map[j.clientName] = (map[j.clientName] || 0) + j.budgetValue;
+          map[j.clientName] = (map[j.clientName] || 0) + (j.budgetValue || 0);
       });
       return Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 5);
   }, [overviewJobStats]);
@@ -355,7 +355,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       const map: {[key:string]: {over: number, total: number}} = {};
       overviewJobStats.filter(j => j.isOverBudget).forEach(j => {
           if (!map[j.clientName]) map[j.clientName] = {over: 0, total: 0};
-          map[j.clientName].over += (j.totalHoursUsed - j.budgetHours);
+          map[j.clientName].over += (j.totalHoursUsed - (j.budgetHours || 0));
           map[j.clientName].total += j.totalHoursUsed;
       });
       return Object.entries(map).sort((a,b) => b[1].over - a[1].over).slice(0, 5);
@@ -443,9 +443,9 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
           'Cliente': j.clientName,
           'Descrizione': j.description,
           'Stato': j.status,
-          'Budget Ore': j.budgetHours,
+          'Budget Ore': j.budgetHours || 0,
           'Ore Usate': j.totalHoursUsed,
-          'Valore Commessa': j.budgetValue,
+          'Valore Commessa': j.budgetValue || 0,
           'Margine': j.profitMargin,
           'Scadenza': j.deadline,
           'Data Inizio': j.creationDate || j.startDate, 
@@ -927,6 +927,8 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
           id: isEditingJob.id || Date.now().toString(), 
           status: isEditingJob.status || JobStatus.PLANNED, 
           priority: isEditingJob.priority || 3,
+          budgetHours: Number(isEditingJob.budgetHours) || 0,
+          budgetValue: Number(isEditingJob.budgetValue) || 0,
           creationDate: isEditingJob.creationDate || new Date().toISOString().split('T')[0] 
       } as Job); 
       setIsEditingJob(null); 
@@ -1098,7 +1100,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                 </div>
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                     <div className="flex justify-between items-start">
-                        <div><p className="text-slate-500 text-sm font-medium">Valore Produzione</p><h3 className="text-2xl font-bold text-slate-800">€ {overviewJobStats.reduce((acc, j) => acc + j.budgetValue, 0).toLocaleString()}</h3></div>
+                        <div><p className="text-slate-500 text-sm font-medium">Valore Produzione</p><h3 className="text-2xl font-bold text-slate-800">€ {overviewJobStats.reduce((acc, j) => acc + (j.budgetValue || 0), 0).toLocaleString()}</h3></div>
                         <TrendingUp className="text-green-500 bg-green-50 p-2 rounded-lg" size={40} />
                     </div>
                 </div>
@@ -1228,9 +1230,9 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                     <td className="px-6 py-4"><input type="checkbox" className="rounded border-slate-300" checked={selectedJobIds.has(job.id)} onChange={(e) => {const newSet = new Set(selectedJobIds); if (e.target.checked) newSet.add(job.id); else newSet.delete(job.id); setSelectedJobIds(newSet);}}/></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 cursor-pointer" onClick={() => setSelectedJobForAnalysis(job.id)}>{job.code}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{job.clientName}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><div className="flex items-center gap-2"><div className="w-16 bg-slate-200 rounded-full h-2.5"><div className={`h-2.5 rounded-full ${job.isOverBudget ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min((job.totalHoursUsed / job.budgetHours) * 100, 100)}%` }}></div></div><span>{job.totalHoursUsed.toFixed(1)}/{job.budgetHours}</span></div></td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><div className="flex items-center gap-2"><div className="w-16 bg-slate-200 rounded-full h-2.5"><div className={`h-2.5 rounded-full ${job.isOverBudget ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min((job.totalHoursUsed / (job.budgetHours || 1)) * 100, 100)}%` }}></div></div><span>{job.totalHoursUsed.toFixed(1)}/{(job.budgetHours || 0)}</span></div></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{job.deadline ? new Date(job.deadline).toLocaleDateString('it-IT') : '-'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">€ {job.budgetValue.toLocaleString()}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">€ {(job.budgetValue || 0).toLocaleString()}</td>
                                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${job.profitMargin < 0 ? 'text-red-600' : 'text-green-600'}`}>€ {job.profitMargin.toLocaleString()}</td>
                                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${job.marginPercentage < 0 ? 'text-red-600' : 'text-green-600'}`}>{job.marginPercentage.toFixed(1)}%</td>
                                     <td className="px-6 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${job.status === JobStatus.IN_PROGRESS ? 'bg-green-100 text-green-800' : job.status === JobStatus.PLANNED ? 'bg-blue-100 text-blue-800' : job.status === JobStatus.COMPLETED ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-800'}`}>{job.status}</span></td>
@@ -1605,7 +1607,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                         <td className="px-6 py-4 text-slate-400 text-xs truncate max-w-[200px]" title={job.description}>{job.description}</td>
                                         <td className="px-6 py-4 text-slate-500 flex gap-1">{Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}</td>
                                         <td className="px-6 py-4 text-slate-500 text-xs">{job.creationDate ? new Date(job.creationDate).toLocaleDateString('it-IT') : '-'}</td>
-                                        <td className="px-6 py-4 text-slate-500">{job.budgetHours}h / €{job.budgetValue}</td>
+                                        <td className="px-6 py-4 text-slate-500">{(job.budgetHours || 0)}h / €{(job.budgetValue || 0)}</td>
                                         <td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td>
                                         <td className="px-6 py-4 flex gap-2">
                                             <button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800" title="Modifica"><Edit2 size={18}/></button>
