@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, AttendanceRecord, Role } from '../types';
-import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Wifi, AlertCircle, Play, Laptop, CloudOff } from 'lucide-react';
+import { Clock, CheckCircle, LogIn, LogOut, ArrowLeft, Scan, KeyRound, Delete, X, RefreshCcw, Wifi, AlertCircle, Play, Laptop, CloudOff, CheckCircle2 } from 'lucide-react';
 import { dbService } from '../services/db';
 
 interface Props {
@@ -14,6 +15,7 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [message, setMessage] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState<'ENTRATA' | 'USCITA' | null>(null);
   
   const [scanValue, setScanValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -147,14 +149,21 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
 
   const handleAction = (type: 'ENTRATA' | 'USCITA') => {
     if (!selectedEmp) return;
+    
+    // Feedback istantaneo
+    setIsSuccess(type);
+    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+    // Registrazione
     onRecord({ id: Date.now().toString(), employeeId: selectedEmp.id, timestamp: new Date().toISOString(), type });
-    setMessage(`Timbrata ${type} per ${selectedEmp.name}`);
+    
     setTimeout(() => {
-      setMessage(null);
+      setIsSuccess(null);
       setSelectedEmp(null);
       setShowPinPad(false);
       setEnteredPin('');
-    }, 3000);
+      setMessage(null);
+    }, 2500);
   };
 
   return (
@@ -171,7 +180,7 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
           )}
       </div>
 
-      {/* Header - Ridimensionato per schermi bassi */}
+      {/* Header */}
       <div className={`${isShortScreen ? 'mb-4' : 'mb-10'} text-center`}>
         <div className={`${isShortScreen ? 'mb-1' : 'mb-6'} flex flex-col items-center`}>
             <div className={`${isShortScreen ? 'text-2xl' : 'text-4xl'} font-black text-[#EC1D25] tracking-tighter`}>ALEA</div>
@@ -231,19 +240,31 @@ const AttendanceKiosk: React.FC<Props> = ({ employees, onRecord, onExit, nfcEnab
                    <p className="text-slate-500 text-[10px] font-medium uppercase">{selectedEmp.department}</p>
                  </div>
               </div>
-              <button onClick={() => setSelectedEmp(null)} className="text-xs text-slate-400 hover:text-[#EC1D25] underline">Annulla</button>
+              {!isSuccess && <button onClick={() => setSelectedEmp(null)} className="text-xs text-slate-400 hover:text-[#EC1D25] underline">Annulla</button>}
            </div>
 
-           <div className={`grid grid-cols-2 ${isShortScreen ? 'gap-4' : 'gap-6'}`}>
-              <button onClick={() => handleAction('ENTRATA')} className={`${isShortScreen ? 'h-32' : 'h-48'} bg-green-50 hover:bg-green-100 border-2 border-green-500 rounded-xl flex flex-col items-center justify-center gap-2 transition group`}>
-                <LogIn size={isShortScreen ? 48 : 64} className="text-green-600 group-hover:scale-110 transition-transform" />
-                <span className={`${isShortScreen ? 'text-xl' : 'text-2xl'} font-bold text-green-700`}>ENTRATA</span>
-              </button>
-              <button onClick={() => handleAction('USCITA')} className={`${isShortScreen ? 'h-32' : 'h-48'} bg-red-50 hover:bg-red-100 border-2 border-[#EC1D25] rounded-xl flex flex-col items-center justify-center gap-2 transition group`}>
-                <LogOut size={isShortScreen ? 48 : 64} className="text-[#EC1D25] group-hover:scale-110 transition-transform" />
-                <span className={`${isShortScreen ? 'text-xl' : 'text-2xl'} font-bold text-[#EC1D25]`}>USCITA</span>
-              </button>
-           </div>
+           {isSuccess ? (
+               <div className="flex flex-col items-center justify-center py-8 animate-in zoom-in duration-300">
+                   <div className="bg-green-100 p-6 rounded-full mb-6">
+                        <CheckCircle2 size={80} className="text-green-600" />
+                   </div>
+                   <h2 className="text-3xl font-black text-green-700 uppercase tracking-tighter">
+                       {isSuccess} REGISTRATA
+                   </h2>
+                   <p className="text-slate-400 mt-2 font-bold uppercase tracking-widest text-xs">Arrivederci!</p>
+               </div>
+           ) : (
+               <div className={`grid grid-cols-2 ${isShortScreen ? 'gap-4' : 'gap-6'}`}>
+                  <button onClick={() => handleAction('ENTRATA')} className={`${isShortScreen ? 'h-32' : 'h-48'} bg-green-50 hover:bg-green-100 border-2 border-green-500 rounded-xl flex flex-col items-center justify-center gap-2 transition group`}>
+                    <LogIn size={isShortScreen ? 48 : 64} className="text-green-600 group-hover:scale-110 transition-transform" />
+                    <span className={`${isShortScreen ? 'text-xl' : 'text-2xl'} font-bold text-green-700`}>ENTRATA</span>
+                  </button>
+                  <button onClick={() => handleAction('USCITA')} className={`${isShortScreen ? 'h-32' : 'h-48'} bg-red-50 hover:bg-red-100 border-2 border-[#EC1D25] rounded-xl flex flex-col items-center justify-center gap-2 transition group`}>
+                    <LogOut size={isShortScreen ? 48 : 64} className="text-[#EC1D25] group-hover:scale-110 transition-transform" />
+                    <span className={`${isShortScreen ? 'text-xl' : 'text-2xl'} font-bold text-[#EC1D25]`}>USCITA</span>
+                  </button>
+               </div>
+           )}
         </div>
       )}
 
