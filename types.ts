@@ -96,7 +96,8 @@ export enum JustificationType {
   FESTIVO = 'Festivo',
   INGIUSTIFICATO = 'Assenza Ingiustificata',
   RITARDO_GIUSTIFICATO = 'Ritardo Giustificato',
-  CONGEDO = 'Congedo'
+  CONGEDO = 'Congedo',
+  STRAORDINARIO = 'Straordinario'
 }
 
 export interface DayJustification {
@@ -169,7 +170,7 @@ export interface NDEFReader {
 }
 
 declare global {
-  interface Window {
+  interface window {
     NDEFReader: {
       new (): NDEFReader;
     };
