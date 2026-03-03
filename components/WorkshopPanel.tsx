@@ -22,7 +22,7 @@ const WorkshopPanel: React.FC<Props> = ({ currentUser, jobs, logs, onAddLog, onD
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
 
-  const activeJobs = jobs.filter(j => j.status === JobStatus.IN_PROGRESS || j.status === JobStatus.PLANNED);
+  const activeJobs = jobs.filter(j => (j.status === JobStatus.IN_PROGRESS || j.status === JobStatus.PLANNED) && !j.isArchived);
   const mySuggestedJobs = activeJobs.filter(j => j.suggestedOperatorId === currentUser.id);
 
   // LOGICA DI ORDINAMENTO OTTIMIZZATA

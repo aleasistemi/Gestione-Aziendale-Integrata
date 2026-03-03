@@ -970,7 +970,8 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
   const handleRestoreJob = (job: Job) => {
       if (confirm(`Vuoi ripristinare la commessa ${job.code}?`)) {
-          onSaveJob({ ...job, isArchived: false, archiveYear: undefined });
+          const { archiveYear, ...rest } = job;
+          onSaveJob({ ...rest, isArchived: false });
       }
   }
 
