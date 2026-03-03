@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:check": "tsc && vite build",
     "preview": "vite preview",
+    "lint": "tsc --noEmit",
     "init:android": "npx cap init AleaApp com.aleasistemi.gestionale --web-dir=dist",
     "build:android": "npm run build && npx cap sync android",
     "sync:android": "npm run build && npx cap sync",

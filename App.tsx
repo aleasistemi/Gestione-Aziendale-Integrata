@@ -98,9 +98,28 @@ function App() {
     }
 
     refreshData();
-    const interval = setInterval(refreshData, 5000);
+    
+    const unsubscribe = dbService.listenToUpdates((updates) => {
+      if (updates.employees) setEmployees(updates.employees);
+      if (updates.jobs) setJobs(updates.jobs);
+      if (updates.logs) setLogs(updates.logs);
+      if (updates.attendance) {
+          const offline = dbService.getOfflineAttendance();
+          setAttendance([...updates.attendance, ...offline]);
+      }
+      if (updates.vehicles) setVehicles(updates.vehicles);
+      if (updates.vehicleLogs) setVehicleLogs(updates.vehicleLogs);
+      if (updates.justifications) setJustifications(updates.justifications);
+      if (updates.customPrompts) setAiPrompts(updates.customPrompts);
+      if (updates.permissions) setPermissions(updates.permissions);
+      if (updates.settings) setSettings(updates.settings);
+    });
+
     const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => { clearInterval(interval); clearInterval(clockInterval); };
+    return () => { 
+      unsubscribe();
+      clearInterval(clockInterval); 
+    };
   }, []);
 
   const startNfcScan = async () => {
