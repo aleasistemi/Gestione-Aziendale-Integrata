@@ -2,7 +2,7 @@
 import { AppDatabase, Employee, Job, WorkLog, AttendanceRecord, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, Vehicle, VehicleLog } from '../types';
 import { MOCK_EMPLOYEES, MOCK_JOBS, MOCK_LOGS, MOCK_ATTENDANCE } from '../constants';
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, writeBatch } from "firebase/firestore";
+import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, writeBatch, onSnapshot } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAMExnSLvZab2lQeg8bPJsZ91w4bvlDQm4",
@@ -108,7 +108,7 @@ class DatabaseService {
     } catch (e) { return SEED_DATA; }
   }
 
-  private getOfflineAttendance(): AttendanceRecord[] {
+  public getOfflineAttendance(): AttendanceRecord[] {
       const raw = localStorage.getItem(OFFLINE_ATTENDANCE_KEY);
       return raw ? JSON.parse(raw) : [];
   }
@@ -124,6 +124,31 @@ class DatabaseService {
           localStorage.removeItem(OFFLINE_ATTENDANCE_KEY);
           return queue.length;
       } catch { return 0; }
+  }
+
+  listenToUpdates(callback: (updates: Partial<AppDatabase>) => void) {
+    if (!navigator.onLine) return () => {};
+
+    const unsubs = [
+      onSnapshot(collection(db, 'employees'), (s) => callback({ employees: s.docs.map(d => d.data() as Employee) })),
+      onSnapshot(collection(db, 'jobs'), (s) => callback({ jobs: s.docs.map(d => d.data() as Job) })),
+      onSnapshot(collection(db, 'logs'), (s) => callback({ logs: s.docs.map(d => d.data() as WorkLog) })),
+      onSnapshot(collection(db, 'attendance'), (s) => callback({ attendance: s.docs.map(d => d.data() as AttendanceRecord) })),
+      onSnapshot(collection(db, 'justifications'), (s) => callback({ justifications: s.docs.map(d => d.data() as DayJustification) })),
+      onSnapshot(collection(db, 'customPrompts'), (s) => callback({ customPrompts: s.docs.map(d => d.data() as AIQuickPrompt) })),
+      onSnapshot(collection(db, 'vehicles'), (s) => callback({ vehicles: s.docs.map(d => d.data() as Vehicle) })),
+      onSnapshot(collection(db, 'vehicleLogs'), (s) => callback({ vehicleLogs: s.docs.map(d => d.data() as VehicleLog) })),
+      onSnapshot(collection(db, 'permissions'), (s) => {
+        const permDoc = s.docs.find(d => d.id === 'roles');
+        if (permDoc) callback({ permissions: permDoc.data().map as RolePermissions });
+      }),
+      onSnapshot(collection(db, 'settings'), (s) => {
+        const setDocSnap = s.docs.find(d => d.id === 'global');
+        if (setDocSnap) callback({ settings: setDocSnap.data() as GlobalSettings });
+      })
+    ];
+
+    return () => unsubs.forEach(unsub => unsub());
   }
 
   async saveWorkLog(log: WorkLog) { await setDoc(doc(db, 'logs', log.id), log); }
