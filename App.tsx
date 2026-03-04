@@ -43,9 +43,9 @@ function App() {
   const [kioskPin, setKioskPin] = useState('');
   const [targetKioskMode, setTargetKioskMode] = useState<'ATTENDANCE' | 'VEHICLE' | 'MOBILE_VEHICLE' | null>(null);
 
-  const refreshData = async () => {
+  const refreshData = async (role?: Role) => {
     try {
-      const data = await dbService.getAllData();
+      const data = await dbService.getAllData(role);
       setEmployees(data.employees);
       setJobs(data.jobs);
       setLogs(data.logs);
@@ -65,6 +65,8 @@ function App() {
 
   useEffect(() => {
     const storedToken = localStorage.getItem('auth_token');
+    let initialRole: Role | undefined;
+
     if (storedToken === 'ALEASISTEMI') {
       setIsAuthenticated(true);
     } else if (APP_CONFIG.MODE === 'MOBILE_TOTEM') {
@@ -74,6 +76,7 @@ function App() {
 
     if (APP_CONFIG.MODE === 'MOBILE_TOTEM') {
         setViewMode('MOBILE_VEHICLE_KIOSK');
+        initialRole = Role.EMPLOYEE; // Default per mobile totem
     } else {
         const savedKioskMode = localStorage.getItem('kiosk_mode');
         if (savedKioskMode === 'ATTENDANCE') setViewMode('ATTENDANCE_KIOSK');
@@ -85,6 +88,7 @@ function App() {
                 try {
                     const u = JSON.parse(storedUser);
                     setCurrentUser(u);
+                    initialRole = u.role;
                     if (u.role === Role.WORKSHOP || u.role === Role.EMPLOYEE || u.role === Role.WAREHOUSE) {
                         setViewMode('WORKSHOP_PANEL');
                     } else {
@@ -97,9 +101,10 @@ function App() {
         }
     }
 
-    refreshData();
+    // Caricamento iniziale basato sul ruolo salvato o kiosk
+    refreshData(initialRole);
     
-    const unsubscribe = dbService.listenToUpdates((updates) => {
+    const unsubscribe = dbService.listenToUpdates(initialRole, (updates) => {
       if (updates.employees) setEmployees(updates.employees);
       if (updates.jobs) setJobs(updates.jobs);
       if (updates.logs) setLogs(updates.logs);
@@ -178,6 +183,10 @@ function App() {
   const handleLogin = (employee: Employee) => {
     setCurrentUser(employee);
     localStorage.setItem('current_user_json', JSON.stringify(employee));
+    
+    // Ricarica i dati specifici per il ruolo appena loggato
+    refreshData(employee.role);
+    
     if (employee.role === Role.WORKSHOP || employee.role === Role.EMPLOYEE || employee.role === Role.WAREHOUSE) {
       setViewMode('WORKSHOP_PANEL');
     } else {
