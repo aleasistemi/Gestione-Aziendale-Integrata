@@ -2,7 +2,19 @@
 import { AppDatabase, Employee, Job, WorkLog, AttendanceRecord, Role, DayJustification, AIQuickPrompt, RolePermissions, GlobalSettings, Vehicle, VehicleLog } from '../types';
 import { MOCK_EMPLOYEES, MOCK_JOBS, MOCK_LOGS, MOCK_ATTENDANCE } from '../constants';
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, writeBatch, onSnapshot } from "firebase/firestore";
+import { 
+  getFirestore, 
+  collection, 
+  getDocs, 
+  setDoc, 
+  doc, 
+  deleteDoc, 
+  writeBatch, 
+  onSnapshot,
+  query,
+  where,
+  enableIndexedDbPersistence
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAMExnSLvZab2lQeg8bPJsZ91w4bvlDQm4",
@@ -15,6 +27,13 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+// Abilita persistenza offline per ridurre letture
+if (typeof window !== 'undefined') {
+    enableIndexedDbPersistence(db).catch(() => {
+        console.warn("Persistenza offline non disponibile");
+    });
+}
 
 const DEFAULT_AI_PROMPTS: AIQuickPrompt[] = [
   { id: '1', label: 'Analisi Margine', prompt: 'Analizza il margine di profitto di tutte le commesse attive e dimmi quali sono in perdita.' },
@@ -72,40 +91,61 @@ class DatabaseService {
       } catch (e) { console.error("Seed error:", e); }
   }
 
-  async getAllData(): Promise<AppDatabase> {
+  async getAllData(role?: Role): Promise<AppDatabase> {
     if (!navigator.onLine) {
         return { ...SEED_DATA, attendance: [...SEED_DATA.attendance, ...this.getOfflineAttendance()] };
     }
     await this.seedDatabaseIfNeeded();
+
     try {
-        const [empSnap, jobSnap, logSnap, attSnap, justSnap, promptSnap, permSnap, setSnap, vehSnap, vehLogSnap] = await Promise.all([
+        const isFullAdmin = role === Role.SYSTEM_ADMIN || role === Role.DIRECTION || role === Role.ADMIN;
+        const isWorkshop = role === Role.WORKSHOP || role === Role.WAREHOUSE || role === Role.EMPLOYEE;
+        const isKiosk = !role;
+
+        const promises: any[] = [
             getDocs(collection(db, 'employees')),
-            getDocs(collection(db, 'jobs')),
-            getDocs(collection(db, 'logs')),
-            getDocs(collection(db, 'attendance')),
-            getDocs(collection(db, 'justifications')),
-            getDocs(collection(db, 'customPrompts')),
-            getDocs(collection(db, 'permissions')),
             getDocs(collection(db, 'settings')),
-            getDocs(collection(db, 'vehicles')),
-            getDocs(collection(db, 'vehicleLogs'))
-        ]);
-        const employees = empSnap.docs.map(d => d.data() as Employee);
-        const jobs = jobSnap.docs.map(d => d.data() as Job);
-        const logs = logSnap.docs.map(d => d.data() as WorkLog);
-        let attendance = attSnap.docs.map(d => d.data() as AttendanceRecord);
-        const justifications = justSnap.docs.map(d => d.data() as DayJustification);
-        const customPrompts = promptSnap.docs.map(d => d.data() as AIQuickPrompt);
-        const vehicles = vehSnap.docs.map(d => d.data() as Vehicle);
-        const vehicleLogs = vehLogSnap.docs.map(d => d.data() as VehicleLog);
+            getDocs(collection(db, 'permissions'))
+        ];
+
+        // Caricamento semplificato per evitare errori di indici Firebase
+        // La persistenza offline gestirà comunque l'efficienza delle letture
+        promises.push(getDocs(collection(db, 'jobs')));
+        promises.push(getDocs(collection(db, 'logs')));
+        promises.push(getDocs(collection(db, 'attendance')));
+        
+        if (isFullAdmin || role === Role.FLEET) {
+            promises.push(getDocs(collection(db, 'vehicles')));
+            promises.push(getDocs(collection(db, 'vehicleLogs')));
+        } else {
+            promises.push(Promise.resolve({ docs: [] }));
+            promises.push(Promise.resolve({ docs: [] }));
+        }
+
+        promises.push(getDocs(collection(db, 'justifications')));
+        promises.push(getDocs(collection(db, 'customPrompts')));
+
+        const snaps = await Promise.all(promises);
+        
+        const employees = snaps[0].docs.map((d: any) => d.data() as Employee);
+        const settings = snaps[1].docs.find((d: any) => d.id === 'global')?.data() as GlobalSettings || DEFAULT_SETTINGS;
+        const permissions = snaps[2].docs.find((d: any) => d.id === 'roles')?.data().map as RolePermissions || DEFAULT_PERMISSIONS;
+        const jobs = snaps[3].docs.map((d: any) => d.data() as Job);
+        const logs = snaps[4].docs.map((d: any) => d.data() as WorkLog);
+        let attendance = snaps[5].docs.map((d: any) => d.data() as AttendanceRecord);
+        const vehicles = snaps[6].docs.map((d: any) => d.data() as Vehicle);
+        const vehicleLogs = snaps[7].docs.map((d: any) => d.data() as VehicleLog);
+        const justifications = snaps[8].docs.map((d: any) => d.data() as DayJustification);
+        const customPrompts = snaps[9].docs.map((d: any) => d.data() as AIQuickPrompt);
+
         const offlineQueue = this.getOfflineAttendance();
         if (offlineQueue.length > 0) attendance = [...attendance, ...offlineQueue];
-        const permDoc = permSnap.docs.find(d => d.id === 'roles');
-        const permissions = permDoc ? permDoc.data().map as RolePermissions : DEFAULT_PERMISSIONS;
-        const setDocSnap = setSnap.docs.find(d => d.id === 'global');
-        const settings = setDocSnap ? setDocSnap.data() as GlobalSettings : DEFAULT_SETTINGS;
+
         return { employees, jobs, logs, attendance, justifications, customPrompts, permissions, settings, vehicles, vehicleLogs };
-    } catch (e) { return SEED_DATA; }
+    } catch (e) { 
+        console.error("Error fetching data:", e);
+        return SEED_DATA; 
+    }
   }
 
   public getOfflineAttendance(): AttendanceRecord[] {
@@ -126,27 +166,32 @@ class DatabaseService {
       } catch { return 0; }
   }
 
-  listenToUpdates(callback: (updates: Partial<AppDatabase>) => void) {
+  listenToUpdates(role: Role | undefined, callback: (updates: Partial<AppDatabase>) => void) {
     if (!navigator.onLine) return () => {};
 
-    const unsubs = [
+    const isFullAdmin = role === Role.SYSTEM_ADMIN || role === Role.DIRECTION || role === Role.ADMIN;
+
+    const unsubs: any[] = [
       onSnapshot(collection(db, 'employees'), (s) => callback({ employees: s.docs.map(d => d.data() as Employee) })),
-      onSnapshot(collection(db, 'jobs'), (s) => callback({ jobs: s.docs.map(d => d.data() as Job) })),
-      onSnapshot(collection(db, 'logs'), (s) => callback({ logs: s.docs.map(d => d.data() as WorkLog) })),
-      onSnapshot(collection(db, 'attendance'), (s) => callback({ attendance: s.docs.map(d => d.data() as AttendanceRecord) })),
-      onSnapshot(collection(db, 'justifications'), (s) => callback({ justifications: s.docs.map(d => d.data() as DayJustification) })),
-      onSnapshot(collection(db, 'customPrompts'), (s) => callback({ customPrompts: s.docs.map(d => d.data() as AIQuickPrompt) })),
-      onSnapshot(collection(db, 'vehicles'), (s) => callback({ vehicles: s.docs.map(d => d.data() as Vehicle) })),
-      onSnapshot(collection(db, 'vehicleLogs'), (s) => callback({ vehicleLogs: s.docs.map(d => d.data() as VehicleLog) })),
+      onSnapshot(collection(db, 'settings'), (s) => {
+        const setDocSnap = s.docs.find(d => d.id === 'global');
+        if (setDocSnap) callback({ settings: setDocSnap.data() as GlobalSettings });
+      }),
       onSnapshot(collection(db, 'permissions'), (s) => {
         const permDoc = s.docs.find(d => d.id === 'roles');
         if (permDoc) callback({ permissions: permDoc.data().map as RolePermissions });
       }),
-      onSnapshot(collection(db, 'settings'), (s) => {
-        const setDocSnap = s.docs.find(d => d.id === 'global');
-        if (setDocSnap) callback({ settings: setDocSnap.data() as GlobalSettings });
-      })
+      onSnapshot(collection(db, 'jobs'), (s) => callback({ jobs: s.docs.map(d => d.data() as Job) })),
+      onSnapshot(collection(db, 'logs'), (s) => callback({ logs: s.docs.map(d => d.data() as WorkLog) })),
+      onSnapshot(collection(db, 'attendance'), (s) => callback({ attendance: s.docs.map(d => d.data() as AttendanceRecord) })),
+      onSnapshot(collection(db, 'justifications'), (s) => callback({ justifications: s.docs.map(d => d.data() as DayJustification) })),
+      onSnapshot(collection(db, 'customPrompts'), (s) => callback({ customPrompts: s.docs.map(d => d.data() as AIQuickPrompt) }))
     ];
+
+    if (isFullAdmin || role === Role.FLEET) {
+        unsubs.push(onSnapshot(collection(db, 'vehicles'), (s) => callback({ vehicles: s.docs.map(d => d.data() as Vehicle) })));
+        unsubs.push(onSnapshot(collection(db, 'vehicleLogs'), (s) => callback({ vehicleLogs: s.docs.map(d => d.data() as VehicleLog) })));
+    }
 
     return () => unsubs.forEach(unsub => unsub());
   }
@@ -256,6 +301,28 @@ class DatabaseService {
           await this.bulkImport(d.jobs || [], d.logs || [], d.employees || []);
           return true;
       } catch { return false; }
+  }
+
+  async cleanupAttendance(days: number = 90) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      const q = query(collection(db, 'attendance'), where('timestamp', '<', cutoff.toISOString()));
+      const snap = await getDocs(q);
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      return snap.size;
+  }
+
+  async cleanupVehicleLogs(days: number = 365) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      const q = query(collection(db, 'vehicleLogs'), where('timestamp', '<', cutoff.toISOString()));
+      const snap = await getDocs(q);
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      return snap.size;
   }
 }
 
