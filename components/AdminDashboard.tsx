@@ -179,6 +179,35 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   const [tempPermissions, setTempPermissions] = useState<RolePermissions>(permissions);
+  const [isCleaning, setIsCleaning] = useState(false);
+
+  const handleCleanupAttendance = async () => {
+    if (!window.confirm("Sei sicuro di voler eliminare definitivamente le timbrature più vecchie di 90 giorni? Assicurati di aver esportato gli Excel necessari.")) return;
+    setIsCleaning(true);
+    try {
+      const deleted = await dbService.cleanupAttendance(90);
+      alert(`Pulizia completata: eliminati ${deleted} record.`);
+      window.location.reload();
+    } catch (e) {
+      alert("Errore durante la pulizia.");
+    } finally {
+      setIsCleaning(false);
+    }
+  };
+
+  const handleCleanupVehicles = async () => {
+    if (!window.confirm("Sei sicuro di voler eliminare definitivamente i log dei mezzi più vecchi di 1 anno?")) return;
+    setIsCleaning(true);
+    try {
+      const deleted = await dbService.cleanupVehicleLogs(365);
+      alert(`Pulizia completata: eliminati ${deleted} record.`);
+      window.location.reload();
+    } catch (e) {
+      alert("Errore durante la pulizia.");
+    } finally {
+      setIsCleaning(false);
+    }
+  };
 
   const availableArchiveYears = useMemo(() => {
       const years = new Set<number>();
@@ -1754,14 +1783,39 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
 
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                     <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Database className="text-slate-600"/> Manutenzione Dati</h2>
-                    <p className="text-slate-500 mb-6 italic">Aree di reset per ripulire l'applicazione dopo i test iniziali.</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <p className="text-slate-500 mb-6 italic">Aree di reset e pulizia per ottimizzare lo spazio su Firebase.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div className="p-4 border border-amber-100 rounded-xl bg-amber-50/30">
+                            <h4 className="font-bold text-slate-800 mb-1 text-sm">Pulizia Storico Presenze</h4>
+                            <p className="text-xs text-slate-500 mb-3">Elimina timbrature più vecchie di 90 giorni.</p>
+                            <button 
+                                onClick={handleCleanupAttendance} 
+                                disabled={isCleaning}
+                                className="flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition w-full justify-center text-sm font-bold disabled:opacity-50"
+                            >
+                                <Eraser size={16}/> {isCleaning ? 'Pulizia...' : 'Pulisci > 90gg'}
+                            </button>
+                        </div>
+                        <div className="p-4 border border-amber-100 rounded-xl bg-amber-50/30">
+                            <h4 className="font-bold text-slate-800 mb-1 text-sm">Pulizia Storico Mezzi</h4>
+                            <p className="text-xs text-slate-500 mb-3">Elimina log mezzi più vecchi di 1 anno.</p>
+                            <button 
+                                onClick={handleCleanupVehicles} 
+                                disabled={isCleaning}
+                                className="flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition w-full justify-center text-sm font-bold disabled:opacity-50"
+                            >
+                                <Truck size={16}/> {isCleaning ? 'Pulizia...' : 'Pulisci > 1 anno'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-6">
                         <div className="p-4 border border-red-100 rounded-xl bg-red-50/30">
-                            <h4 className="font-bold text-slate-800 mb-2">Registro Commesse e Ore</h4>
-                            <button onClick={handleResetJobs} className="flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition w-full justify-center"><Eraser size={20}/> Elimina Commesse e Ore</button>
+                            <h4 className="font-bold text-slate-800 mb-2">Reset Totale Commesse</h4>
+                            <button onClick={handleResetJobs} className="flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition w-full justify-center"><Eraser size={20}/> Elimina TUTTO (Commesse e Ore)</button>
                         </div>
                         <div className="p-4 border border-orange-100 rounded-xl bg-orange-50/30">
-                            <h4 className="font-bold text-slate-800 mb-2">Registro Parco Mezzi</h4>
+                            <h4 className="font-bold text-slate-800 mb-2">Reset Totale Mezzi</h4>
                             <button onClick={handleResetFleet} className="flex items-center gap-2 bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 transition w-full justify-center"><Truck size={20}/> Svuota Registro Mezzi</button>
                         </div>
                     </div>
