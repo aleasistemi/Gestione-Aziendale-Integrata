@@ -113,15 +113,8 @@ class DatabaseService {
         promises.push(getDocs(collection(db, 'jobs')));
         promises.push(getDocs(collection(db, 'logs')));
         promises.push(getDocs(collection(db, 'attendance')));
-        
-        if (isFullAdmin || role === Role.FLEET) {
-            promises.push(getDocs(collection(db, 'vehicles')));
-            promises.push(getDocs(collection(db, 'vehicleLogs')));
-        } else {
-            promises.push(Promise.resolve({ docs: [] }));
-            promises.push(Promise.resolve({ docs: [] }));
-        }
-
+        promises.push(getDocs(collection(db, 'vehicles')));
+        promises.push(getDocs(collection(db, 'vehicleLogs')));
         promises.push(getDocs(collection(db, 'justifications')));
         promises.push(getDocs(collection(db, 'customPrompts')));
 
@@ -185,13 +178,10 @@ class DatabaseService {
       onSnapshot(collection(db, 'logs'), (s) => callback({ logs: s.docs.map(d => d.data() as WorkLog) })),
       onSnapshot(collection(db, 'attendance'), (s) => callback({ attendance: s.docs.map(d => d.data() as AttendanceRecord) })),
       onSnapshot(collection(db, 'justifications'), (s) => callback({ justifications: s.docs.map(d => d.data() as DayJustification) })),
-      onSnapshot(collection(db, 'customPrompts'), (s) => callback({ customPrompts: s.docs.map(d => d.data() as AIQuickPrompt) }))
+      onSnapshot(collection(db, 'customPrompts'), (s) => callback({ customPrompts: s.docs.map(d => d.data() as AIQuickPrompt) })),
+      onSnapshot(collection(db, 'vehicles'), (s) => callback({ vehicles: s.docs.map(d => d.data() as Vehicle) })),
+      onSnapshot(collection(db, 'vehicleLogs'), (s) => callback({ vehicleLogs: s.docs.map(d => d.data() as VehicleLog) }))
     ];
-
-    if (isFullAdmin || role === Role.FLEET) {
-        unsubs.push(onSnapshot(collection(db, 'vehicles'), (s) => callback({ vehicles: s.docs.map(d => d.data() as Vehicle) })));
-        unsubs.push(onSnapshot(collection(db, 'vehicleLogs'), (s) => callback({ vehicleLogs: s.docs.map(d => d.data() as VehicleLog) })));
-    }
 
     return () => unsubs.forEach(unsub => unsub());
   }
