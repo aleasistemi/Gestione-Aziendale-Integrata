@@ -1039,25 +1039,58 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
       
       const [year, month] = selectedMonth.split('-').map(Number);
       const daysInMonth = new Date(year, month, 0).getDate();
-      const rows = [];
+      
+      const parseTime = (t: string | undefined) => { 
+          const timeStr = t || "00:00";
+          const [h, m] = timeStr.split(':').map(Number); 
+          return (h || 0) * 60 + (m || 0); 
+      };
+      
+      const morningExpected = parseTime(emp.scheduleEndMorning || "12:30") - parseTime(emp.scheduleStartMorning || "08:30");
+      const afternoonExpected = parseTime(emp.scheduleEndAfternoon || "17:30") - parseTime(emp.scheduleStartAfternoon || "13:30");
+      const dailyContractualHours = Math.max(0, (morningExpected + afternoonExpected) / 60);
+
+      const aoa = [
+          ["Nome e Cognome:", emp.name],
+          ["Mese:", month],
+          ["Anno:", year],
+          [],
+          ["Data", "Entrata", "Uscita Pausa", "Rientro Pausa", "Uscita", "Ore Ordinarie", "Straordinari", "Permessi", "Giustificativo", "Note"]
+      ];
       
       for(let d=1; d<=daysInMonth; d++) {
           const dateStr = `${selectedMonth}-${String(d).padStart(2, '0')}`;
           const stats = calculateDailyStats(emp.id, dateStr);
-          rows.push({
-              'Data': dateStr,
-              'Entrata': stats.firstIn || '',
-              'Uscita Pausa': stats.lunchOut || '',
-              'Rientro Pausa': stats.lunchIn || '',
-              'Uscita': stats.lastOut || '',
-              'Ore Ordinarie': stats.standardHours > 0 ? stats.standardHours.toFixed(2) : '',
-              'Straordinari': stats.overtime > 0 ? stats.overtime.toFixed(2) : '',
-              'Giustificativo': stats.justification ? stats.justification.type : '',
-              'Note': [stats.isLate ? 'RITARDO' : '', stats.isAbsent ? 'ASSENZA' : '', stats.isAnomaly ? 'ANOMALIA' : ''].filter(Boolean).join(', ')
-          });
+          const dateObj = new Date(dateStr);
+          const isWorkDay = (emp.workDays || [1,2,3,4,5]).includes(dateObj.getDay());
+          const isCoveredByOther = stats.justification && 
+              [JustificationType.FERIE, JustificationType.MALATTIA, JustificationType.FESTIVO, JustificationType.INGIUSTIFICATO, JustificationType.CONGEDO, JustificationType.STRAORDINARIO].includes(stats.justification.type);
+
+          let dailyPermesso = 0;
+          if (isWorkDay && !isCoveredByOther) {
+              if (stats.justification?.type === JustificationType.PERMESSO) {
+                  dailyPermesso = Math.max(0, dailyContractualHours - stats.standardHours);
+              } 
+              else if (stats.standardHours > 0 && stats.standardHours < dailyContractualHours) {
+                  dailyPermesso = (dailyContractualHours - stats.standardHours);
+              }
+          }
+
+          aoa.push([
+              dateStr,
+              stats.firstIn || '',
+              stats.lunchOut || '',
+              stats.lunchIn || '',
+              stats.lastOut || '',
+              stats.standardHours > 0 ? stats.standardHours.toFixed(2) : '',
+              stats.overtime > 0 ? stats.overtime.toFixed(2) : '',
+              dailyPermesso > 0 ? dailyPermesso.toFixed(2) : '',
+              stats.justification ? stats.justification.type : '',
+              [stats.isLate ? 'RITARDO' : '', stats.isAbsent ? 'ASSENZA' : '', stats.isAnomaly ? 'ANOMALIA' : ''].filter(Boolean).join(', ')
+          ]);
       }
 
-      const ws = utils.json_to_sheet(rows);
+      const ws = utils.aoa_to_sheet(aoa);
       const wb = utils.book_new();
       utils.book_append_sheet(wb, ws, `Cartellino_${emp.name.replace(/\s+/g, '_')}`);
       writeFile(wb, `Cartellino_${emp.name.replace(/\s+/g, '_')}_${selectedMonth}.xlsx`);
