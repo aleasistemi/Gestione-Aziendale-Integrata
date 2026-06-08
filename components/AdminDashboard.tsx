@@ -1691,8 +1691,9 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                     <th onClick={() => requestSort('clientName', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer whitespace-nowrap">Cliente {renderSortArrow('clientName', manageJobSort)}</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Descrizione</th>
                                     <th onClick={() => requestSort('priority', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer whitespace-nowrap">Priorità {renderSortArrow('priority', manageJobSort)}</th>
+                                    <th onClick={() => requestSort('deadline', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer whitespace-nowrap">Scadenza {renderSortArrow('deadline', manageJobSort)}</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Data Inizio</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Budget/Valore</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Budget/€</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Stato</th>
                                     <th className="px-6 py-3"></th>
                                 </tr>
@@ -1705,8 +1706,9 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                         <td className="px-6 py-4 text-slate-500">{job.clientName}</td>
                                         <td className="px-6 py-4 text-slate-400 text-xs truncate max-w-[200px]" title={job.description}>{job.description}</td>
                                         <td className="px-6 py-4 text-slate-500 flex gap-1">{Array.from({length: job.priority || 3}).map((_, i) => <Star key={i} size={12} className="fill-orange-400 text-orange-400"/>)}</td>
+                                        <td className="px-6 py-4 text-slate-500 text-xs">{job.deadline ? new Date(job.deadline).toLocaleDateString('it-IT') : '-'}</td>
                                         <td className="px-6 py-4 text-slate-500 text-xs">{job.creationDate ? new Date(job.creationDate).toLocaleDateString('it-IT') : '-'}</td>
-                                        <td className="px-6 py-4 text-slate-500">{(job.budgetHours || 0)}h / €{(job.budgetValue || 0)}</td>
+                                        <td className="px-6 py-4 text-slate-500 text-xs">{(job.budgetHours || 0)}h / €{(job.budgetValue || 0)}</td>
                                         <td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td>
                                         <td className="px-6 py-4 flex gap-2">
                                             <button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800" title="Modifica"><Edit2 size={18}/></button>
@@ -1723,7 +1725,7 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                     </tr>
                                 ))}
                                 {sortedManageJobs.length === 0 && (
-                                    <tr><td colSpan={9} className="text-center py-8 text-slate-400 italic">Nessuna commessa trovata.</td></tr>
+                                    <tr><td colSpan={10} className="text-center py-8 text-slate-400 italic">Nessuna commessa trovata.</td></tr>
                                 )}
                             </tbody>
                         </table></div>
