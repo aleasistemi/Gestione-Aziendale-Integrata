@@ -296,12 +296,29 @@ class DatabaseService {
   async cleanupAttendance(days: number = 90) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - days);
-      const q = query(collection(db, 'attendance'), where('timestamp', '<', cutoff.toISOString()));
-      const snap = await getDocs(q);
-      const batch = writeBatch(db);
-      snap.docs.forEach(d => batch.delete(d.ref));
-      await batch.commit();
-      return snap.size;
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      
+      const qAtt = query(collection(db, 'attendance'), where('timestamp', '<', cutoff.toISOString()));
+      const qJust = query(collection(db, 'justifications'), where('date', '<', cutoffStr));
+      
+      const [snapAtt, snapJust] = await Promise.all([
+          getDocs(qAtt),
+          getDocs(qJust)
+      ]);
+      
+      const allDocs = [...snapAtt.docs, ...snapJust.docs];
+      const totalCount = allDocs.length;
+      
+      // Firestore writeBatch supporta un massimo di 500 operazioni per singola transazione.
+      // Eseguiamo la pulizia in blocchi di 400 per garantire la massima sicurezza ed efficienza.
+      for (let i = 0; i < allDocs.length; i += 400) {
+          const batch = writeBatch(db);
+          const chunk = allDocs.slice(i, i + 400);
+          chunk.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+      }
+      
+      return totalCount;
   }
 
   async cleanupVehicleLogs(days: number = 365) {
