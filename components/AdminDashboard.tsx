@@ -1694,8 +1694,8 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                     <th onClick={() => requestSort('deadline', manageJobSort, setManageJobSort)} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase cursor-pointer whitespace-nowrap">Scadenza {renderSortArrow('deadline', manageJobSort)}</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Data Inizio</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Budget/€</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Stato</th>
-                                    <th className="px-6 py-3"></th>
+                                    <th className="px-2 py-3 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap w-24">Stato</th>
+                                    <th className="px-4 py-3"></th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-slate-200">
@@ -1709,16 +1709,16 @@ export const AdminDashboard: React.FC<Props> = ({ jobs, logs, employees, attenda
                                         <td className="px-6 py-4 text-slate-500 text-xs">{job.deadline ? new Date(job.deadline).toLocaleDateString('it-IT') : '-'}</td>
                                         <td className="px-6 py-4 text-slate-500 text-xs">{job.creationDate ? new Date(job.creationDate).toLocaleDateString('it-IT') : '-'}</td>
                                         <td className="px-6 py-4 text-slate-500 text-xs">{(job.budgetHours || 0)}h / €{(job.budgetValue || 0)}</td>
-                                        <td className="px-6 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td>
-                                        <td className="px-6 py-4 flex gap-2">
-                                            <button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800" title="Modifica"><Edit2 size={18}/></button>
+                                        <td className="px-2 py-4"><span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{job.status}</span></td>
+                                        <td className="px-4 py-4 flex gap-2 items-center">
+                                            <button onClick={() => setIsEditingJob(job)} className="text-blue-600 hover:text-blue-800" title="Modifica"><Edit2 size={16}/></button>
                                             {!job.isArchived && job.status === JobStatus.COMPLETED && (
-                                                <button onClick={() => handleArchiveJob(job)} className="text-slate-400 hover:text-orange-600" title="Archivia"><Archive size={18}/></button>
+                                                <button onClick={() => handleArchiveJob(job)} className="text-slate-400 hover:text-orange-600" title="Archivia"><Archive size={16}/></button>
                                             )}
                                             {job.isArchived && (
                                                 <>
-                                                    <button onClick={() => handleRestoreJob(job)} className="text-orange-600 hover:text-green-600" title="Ripristina da Archivio"><RotateCcw size={18}/></button>
-                                                    <button onClick={() => handleDeleteJobPermanently(job.id)} className="text-red-400 hover:text-red-600" title="Elimina Definitivamente"><Trash2 size={18}/></button>
+                                                    <button onClick={() => handleRestoreJob(job)} className="text-orange-600 hover:text-green-600" title="Ripristina da Archivio"><RotateCcw size={16}/></button>
+                                                    <button onClick={() => handleDeleteJobPermanently(job.id)} className="text-red-400 hover:text-red-600" title="Elimina Definitivamente"><Trash2 size={16}/></button>
                                                 </>
                                             )}
                                         </td>
