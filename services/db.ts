@@ -223,6 +223,7 @@ class DatabaseService {
   }
 
   async saveEmployee(emp: Employee) { await setDoc(doc(db, 'employees', emp.id), emp); }
+  async deleteEmployee(empId: string) { await deleteDoc(doc(db, 'employees', empId)); }
   async saveJustification(just: DayJustification) { await setDoc(doc(db, 'justifications', just.id), just); }
   async saveAiPrompts(p: AIQuickPrompt[]) { 
       const batch = writeBatch(db);
