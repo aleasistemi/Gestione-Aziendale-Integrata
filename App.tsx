@@ -240,6 +240,14 @@ function App() {
       if (job) { await dbService.saveJob({ ...job, status }); refreshData(); }
   }
   const handleSaveEmployee = async (emp: Employee) => { await dbService.saveEmployee(emp); refreshData(); };
+  const handleDeleteEmployee = async (empId: string) => {
+    if (currentUser?.id === empId) {
+      alert("Non puoi eliminare il profilo con cui sei attualmente connesso.");
+      return;
+    }
+    await dbService.deleteEmployee(empId);
+    refreshData();
+  };
   const handleSaveJustification = async (just: DayJustification) => { await dbService.saveJustification(just); refreshData(); }
   const handleSaveAiPrompts = async (prompts: AIQuickPrompt[]) => { await dbService.saveAiPrompts(prompts); refreshData(); }
   const handleSavePermissions = async (perms: RolePermissions) => { await dbService.savePermissions(perms); refreshData(); }
@@ -437,7 +445,7 @@ function App() {
             jobs={jobs} logs={logs} employees={employees} attendance={attendance} 
             vehicles={vehicles} vehicleLogs={vehicleLogs} justifications={justifications} 
             customPrompts={aiPrompts} permissions={permissions} onSaveJob={handleSaveJob} 
-            onSaveEmployee={handleSaveEmployee} onSaveJustification={handleSaveJustification} 
+            onSaveEmployee={handleSaveEmployee} onDeleteEmployee={handleDeleteEmployee} onSaveJustification={handleSaveJustification} 
             onSaveAiPrompts={handleSaveAiPrompts} onSavePermissions={handleSavePermissions} 
             onUpdateLog={updateWorkLog} currentUserRole={currentUser?.role || Role.EMPLOYEE} 
             settings={settings} onSaveSettings={handleSaveSettings} 
